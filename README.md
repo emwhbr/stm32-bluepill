@@ -1,18 +1,19 @@
-Easy "clone and go" repository for a libopencm3 based project.
+# stm32_bluepill
 
-# Instructions
- 1. git clone --recurse-submodules https://github.com/libopencm3/libopencm3-template.git your-project
- 2. cd your-project
- 3. make -C libopencm3 # (Only needed once)
- 4. make -C my-project
 
-If you have an older git, or got ahead of yourself and skipped the ```--recurse-submodules```
-you can fix things by running ```git submodule update --init``` (This is only needed once)
+## General
+Exploring the STM32 MCU by using the "Blue Pill" STM32F103C8T6.
 
-# Directories
-* my-project contains your application
-* my-common-code contains something shared.
+This repository includes different projects based on [LibOpenCM3](https://libopencm3.org/).<br/>
 
-# As a template
-You should replace this with your _own_ README if you are using this
-as a template.
+The layout and build structure was inspired by the contents found at:<br/>
+https://github.com/libopencm3/libopencm3-template.git
+
+## Dependencies
+
+All projects have been built and tested with:
+
+* Linux Mint 19 Tara (x86_64)
+* GNU Arm Embedded Toolchain, Version 9-2019-q4-major
+* OpenOCD, 0.10.0
+* SEGGER J-Link EDU, V6.55a

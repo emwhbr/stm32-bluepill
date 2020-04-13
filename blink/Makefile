@@ -1,9 +1,9 @@
-PROJECT = proj2
+PROJECT = blink
 BUILD_DIR = bin
 
-CFILES = proj2.c
-CFILES += api.c
-AFILES += api-asm.S
+CFILES = blink.c
+CFILES += uart.c
+CFILES += systick.c
 
 INCLUDES += $(patsubst %,-I%, . $(SHARED_DIR))
 

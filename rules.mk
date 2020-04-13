@@ -1,34 +1,18 @@
 DEVICE = stm32f103c8t6
 
-OPENCM3_DIR=../libopencm3
+OPENCM3_DIR =../libopencm3
 include $(OPENCM3_DIR)/mk/genlink-config.mk
 
 SHARED_DIR = ../shared
 VPATH += $(SHARED_DIR)
 
-OOCD_FILE = board/stm32f4discovery.cfg
+OOCD_INTERFACE = jlink.cfg
+OOCD_TARGET = stm32f1x.cfg
+OOCD_PROC = ../scripts/openocd_proc.cfg
 
-### OPTIONAL ###
-# INCLUDES - fully formed -I paths, if you want extra, eg -I../shared
-# BUILD_DIR - defaults to bin, should set this if you are building multiarch
-# OPT - full -O flag, defaults to -Os
-# CSTD - defaults -std=c99
-# CXXSTD - no default.
-# OOCD_INTERFACE - eg stlink-v2
-# OOCD_TARGET - eg stm32f4x
-#    both only used if you use the "make flash" target.
-# OOCD_FILE - eg my.openocd.cfg
-#    This overrides interface/target above, and is used as just -f FILE
-### TODO/FIXME/notes ###
-# No support for stylecheck.
-# No support for BMP/texane/random flash methods, no plans either
-# No support for magically finding the library.
-# C++ hasn't been actually tested with this..... sorry bout that. ;)
-# Second expansion/secondary not set, add this if you need them.
-
-BUILD_DIR ?= bin
-OPT ?= -Os
-CSTD ?= -std=c99
+BUILD_DIR = bin
+OPT = -Os
+CSTD = -std=c99
 
 # Be silent per default, but 'make V=1' will show all compiler calls.
 # If you're insane, V=99 will print out all sorts of things.
@@ -39,13 +23,13 @@ NULL := 2>/dev/null
 endif
 
 # Tool paths.
-PREFIX	?= arm-none-eabi-
+PREFIX	= arm-none-eabi-
 CC	    = $(PREFIX)gcc
 LD	    = $(PREFIX)gcc
 OBJCOPY	= $(PREFIX)objcopy
 OBJDUMP	= $(PREFIX)objdump
 SIZE    = $(PREFIX)size
-OOCD	?= openocd
+OOCD	= openocd
 
 OPENCM3_INC = $(OPENCM3_DIR)/include
 
@@ -62,6 +46,7 @@ TGT_CPPFLAGS += $(INCLUDES) $(OPENCM3_DEFS)
 
 TGT_CFLAGS += $(OPT) $(CSTD) -ggdb3
 TGT_CFLAGS += $(ARCH_FLAGS)
+TGT_CFLAGS += -Werror
 TGT_CFLAGS += -fno-common
 TGT_CFLAGS += -ffunction-sections -fdata-sections
 TGT_CFLAGS += -Wextra -Wshadow -Wno-unused-variable -Wimplicit-function-declaration
@@ -69,6 +54,7 @@ TGT_CFLAGS += -Wredundant-decls -Wstrict-prototypes -Wmissing-prototypes
 
 TGT_CXXFLAGS += $(OPT) $(CXXSTD) -ggdb3
 TGT_CXXFLAGS += $(ARCH_FLAGS)
+TGT_CXXFLAGS += -Werror
 TGT_CXXFLAGS += -fno-common
 TGT_CXXFLAGS += -ffunction-sections -fdata-sections
 TGT_CXXFLAGS += -Wextra -Wshadow -Wredundant-decls  -Weffc++
@@ -141,20 +127,17 @@ $(PROJECT).elf: $(OBJS) $(LIBDEPS)
 	@printf "  OBJDUMP\t$@\n"
 	$(Q)$(OBJDUMP) -S $< > $@
 
-%.flash: %.elf
-	@printf "  FLASH\t$<\n"
-ifeq (,$(OOCD_FILE))
-	$(Q)(echo "halt; program $(realpath $(*).elf) verify reset" | nc -4 localhost 4444 2>/dev/null) || \
-		$(OOCD) -f interface/$(OOCD_INTERFACE).cfg \
-		-f target/$(OOCD_TARGET).cfg \
-		-c "program $(realpath $(*).elf) verify reset exit" \
-		$(NULL)
-else
-	$(Q)(echo "halt; program $(realpath $(*).elf) verify reset" | nc -4 localhost 4444 2>/dev/null) || \
-		$(OOCD) -f $(OOCD_FILE) \
-		-c "program $(realpath $(*).elf) verify reset exit" \
-		$(NULL)
-endif
+%.flash: %.bin
+	@printf "  FLASH TARGET\t$<\n"
+	$(Q)$(OOCD) -f interface/$(OOCD_INTERFACE) -c "transport select swd" \
+	-f target/$(OOCD_TARGET) -f ${OOCD_PROC} \
+	-c "target_program_flash $(realpath $(*).bin)"
+
+reset:
+	@printf "  RESET TARGET\n"
+	$(Q)$(OOCD) -f interface/$(OOCD_INTERFACE) -c "transport select swd" \
+	-f target/$(OOCD_TARGET) -f ${OOCD_PROC} \
+	-c "target_reset"
 
 clean:
 	@printf "  CLEAN\t$(PROJECT)\n"

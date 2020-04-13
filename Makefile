@@ -1,15 +1,15 @@
 ######################################################################
-#  Top Level: STM32F103C8T6 Projects
+#  Top Level: STM32F103C8T6 "Bluepill" Projects
 ######################################################################
 
-PROJECTS = proj1 proj2
+PROJECTS = blink
 
 .PHONY = libopencm3
 
-# Be silent per default, but 'make V=1' will show all compiler calls.
+# Be silent per default, but 'make V=1' will show all compiler calls
 ifneq ($(V),1)
 Q := @
-# Do not print "Entering directory ...".
+# Do not print "Entering directory ..."
 MAKEFLAGS += --no-print-directory
 endif
 
