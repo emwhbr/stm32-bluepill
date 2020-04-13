@@ -1,4 +1,4 @@
-# stm32_bluepill
+# stm32-bluepill
 
 
 ## General
