@@ -3,6 +3,9 @@ DEVICE = stm32f103c8t6
 OPENCM3_DIR =../libopencm3
 include $(OPENCM3_DIR)/mk/genlink-config.mk
 
+FREERTOS_DIR = ../FreeRTOS
+VPATH += $(FREERTOS_DIR)
+
 SHARED_DIR = ../shared
 VPATH += $(SHARED_DIR)
 
@@ -32,9 +35,12 @@ SIZE    = $(PREFIX)size
 OOCD	= openocd
 
 OPENCM3_INC = $(OPENCM3_DIR)/include
+FREERTOS_INC = $(FREERTOS_DIR)/include
 
 # Inclusion of library header files
-INCLUDES += $(patsubst %,-I%, . $(OPENCM3_INC) )
+INCLUDES += $(patsubst %,-I%, . $(OPENCM3_INC)  )
+INCLUDES += $(patsubst %,-I%, . $(FREERTOS_INC) )
+INCLUDES += $(patsubst %,-I%, . $(SHARED_DIR)   )
 
 OBJS = $(CFILES:%.c=$(BUILD_DIR)/%.o)
 OBJS += $(AFILES:%.S=$(BUILD_DIR)/%.o)
