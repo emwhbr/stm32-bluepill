@@ -60,6 +60,9 @@ static void task_uart(void *args)
 {
    (void)args;
 
+   UBaseType_t uxHighWaterMark1 = uxTaskGetStackHighWaterMark( NULL );
+   UBaseType_t uxHighWaterMark2;
+
    uint32_t uart_cnt = 0;
    uint32_t tick_cnt = xTaskGetTickCount();
    uint32_t tick_cnt_old = tick_cnt;
@@ -67,9 +70,10 @@ static void task_uart(void *args)
    while (1)
    {
       tick_cnt = xTaskGetTickCount();
+      uxHighWaterMark2 = uxTaskGetStackHighWaterMark( NULL );
 
-      uart_printf("blink_freertos - led-cnt=%u, uart-cnt=%u, tick_cnt=%u, tick-cnt-delta=%u\n",
-         g_led_cnt, ++uart_cnt, tick_cnt, tick_cnt - tick_cnt_old);
+      uart_printf("blink_freertos - led-cnt=%u, uart-cnt=%u, tick_cnt=%u, tick-cnt-delta=%u, stack1=%u, stack2=%u\n",
+         g_led_cnt, ++uart_cnt, tick_cnt, tick_cnt - tick_cnt_old, uxHighWaterMark1, uxHighWaterMark2);
       tick_cnt_old = tick_cnt;
 
       vTaskDelay(pdMS_TO_TICKS(100));
@@ -88,8 +92,8 @@ int main(void)
    // send message on UART
    uart_printf("blink_freertos - started\n");
 
-   xTaskCreate(task_led,  "LED",  100,  NULL, configMAX_PRIORITIES-1, NULL);
-   xTaskCreate(task_uart, "UART", 1000, NULL, configMAX_PRIORITIES-2, NULL);
+   xTaskCreate(task_led,  "LED",  100, NULL, configMAX_PRIORITIES-1, NULL);
+   xTaskCreate(task_uart, "UART", 200, NULL, configMAX_PRIORITIES-2, NULL);
 
    vTaskStartScheduler();
    while(1)

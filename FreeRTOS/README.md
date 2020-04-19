@@ -15,11 +15,39 @@ We don't use stm32f10x_lib.h because libopencm3 provides our device driver facil
 So we comment that line out of FreeRTOSConfig.h
 
 ## opencm3_freertos.c
-In order to use libopencm3 with FreeRTOS on Cortex-M3 platform, some functions needs to be defined.
-
 This was inspired by the book __Beginning STM32 : Developing with FreeRTOS, libopencm3 and GCC__ (Warren W. Gay).<br/>
 Source code for the book is found at : https://github.com/ve3wwg/stm32f103c8t6.
 
+In order to use libopencm3 with FreeRTOS on Cortex-M3 platform, some functions needs to be defined in our project.<br/>
+We must connect FreeRTOS and libopencm3 so that the FreeRTOS functions are called for certain interrupts.<br/>
+
+Detailed information can be found in the source code for libopencm3:
+...libopencm3/lib/cm3/vector.c
+
+```c
+__attribute__ ((section(".vectors")))
+vector_table_t vector_table = {
+   .initial_sp_value = &_stack,
+   .reset = reset_handler,
+   .nmi = nmi_handler,
+   .hard_fault = hard_fault_handler,
+
+/* Those are defined only on CM3 or CM4 */
+#if defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7EM__)
+   .memory_manage_fault = mem_manage_handler,
+   .bus_fault = bus_fault_handler,
+   .usage_fault = usage_fault_handler,
+   .debug_monitor = debug_monitor_handler,
+#endif
+
+   .sv_call = sv_call_handler,   <------- Note! Call FreeRTOS variant in this handler.
+   .pend_sv = pend_sv_handler,   <------- Note! Call FreeRTOS variant in this handler.
+   .systick = sys_tick_handler,  <------- Note! Call FreeRTOS variant in this handler.
+   .irq = {
+      IRQ_HANDLERS
+   }
+};
+```
 
 ## Structure
 FreeRTOS<br/>
@@ -52,7 +80,7 @@ FreeRTOS<br/>
 │   └── timers.h<br/>
 ├── LICENSE.md<br/>
 ├── list.c<br/>
-├── opencm3_freertos.c<br/>
+├── __opencm3_freertos.c <-- This is the "glue" bewteen libopencm3 and FreeRTOS__<br/>
 ├── port.c<br/>
 ├── queue.c<br/>
 ├── README.md.c<br/>
