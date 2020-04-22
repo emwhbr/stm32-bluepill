@@ -63,10 +63,15 @@
 #define configTOTAL_HEAP_SIZE             ( ( size_t ) ( 10 * 1024 ) )
 
 /* Run time and task stats gathering related definitions. */
-#define configGENERATE_RUN_TIME_STATS           0
+#define configGENERATE_RUN_TIME_STATS           1
 #define configUSE_TRACE_FACILITY                1
 #define configUSE_STATS_FORMATTING_FUNCTIONS    1
 #define configRECORD_STACK_HIGH_ADDRESS         1
+
+void vConfigureTimerForRunTimeStats(void); // defined in runtime_stats.c
+uint32_t ulGetRunTimeCounterValue(void);   // defined in runtime_stats.c
+#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS() vConfigureTimerForRunTimeStats()
+#define portGET_RUN_TIME_COUNTER_VALUE()         ulGetRunTimeCounterValue()
 
 /* Co-routine definitions. */
 #define configUSE_CO_ROUTINES             0

@@ -8,7 +8,7 @@
 
 extern void vApplicationStackOverflowHook(xTaskHandle *pxTask, signed portCHAR *pcTaskName);
 
-uint32_t g_led_cnt = 0;
+volatile uint32_t g_led_cnt = 0;
 
 /////////////////////////////////////////////////////////////
 

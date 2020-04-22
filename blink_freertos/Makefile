@@ -1,6 +1,7 @@
 PROJECT = blink_freertos
 
 CFILES = blink_freertos.c
+CFILES += runtime_stats.c
 CFILES += uart.c
 CFILES += $(CFILES_FREERTOS) $(CFILES_FREERTOS_HEAP_1)
 
