@@ -13,8 +13,8 @@ int _read(int fd, char *buf, int size);
 // circular receive buffer
 #define LINE_BUF_SIZE (32)
 
-static uint16_t start_idx;
-static uint16_t end_idx;
+static uint16_t start_idx = 0;
+static uint16_t end_idx = 0;
 static char line_buf[LINE_BUF_SIZE + 1];
 
 #define line_buf_len ((end_idx - start_idx) % LINE_BUF_SIZE)
@@ -25,7 +25,8 @@ static inline int dec_idx(int n) { return (((n + LINE_BUF_SIZE) - 1) % LINE_BUF_
 
 static void get_buffered_line(void)
 {
-   if (start_idx != end_idx) {
+   if (start_idx != end_idx)
+   {
       return;
    }
 
@@ -48,10 +49,12 @@ static void get_buffered_line(void)
       else
       {
          // non-editing character so insert it
-         if (line_buf_len == (LINE_BUF_SIZE - 1))
+         if (line_buf_len == (LINE_BUF_SIZE - 2))
          {
+            // we have no space left for final \n + \0
             uart_putc('\a');
-         } else
+         }
+         else
          {
             line_buf[end_idx] = c;
             end_idx = inc_idx(end_idx);
@@ -97,6 +100,7 @@ int _read(int fd, char *buf, int size)
    get_buffered_line();
 
    int len = 0;
+
    while ((line_buf_len > 0) && (size > 0))
    {
       *buf++ = line_buf[start_idx];
@@ -104,6 +108,9 @@ int _read(int fd, char *buf, int size)
       len++;
       size--;
    }
+
+   start_idx = 0;
+   end_idx = 0;
 
    return len;
 }
