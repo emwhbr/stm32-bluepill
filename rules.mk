@@ -41,6 +41,7 @@ FREERTOS_INC = $(FREERTOS_DIR)/include
 INCLUDES += $(patsubst %,-I%, . $(OPENCM3_INC)  )
 INCLUDES += $(patsubst %,-I%, . $(FREERTOS_INC) )
 INCLUDES += $(patsubst %,-I%, . $(SHARED_DIR)   )
+INCLUDES += $(patsubst %,-I%, . $(LVGL_DIR) )
 
 OBJS = $(CFILES:%.c=$(BUILD_DIR)/%.o)
 OBJS += $(AFILES:%.S=$(BUILD_DIR)/%.o)
@@ -57,6 +58,7 @@ TGT_CFLAGS += -fno-common
 TGT_CFLAGS += -ffunction-sections -fdata-sections
 TGT_CFLAGS += -Wextra -Wshadow -Wno-unused-variable -Wimplicit-function-declaration
 TGT_CFLAGS += -Wredundant-decls -Wstrict-prototypes -Wmissing-prototypes
+TGT_CFLAGS += $(LVGL_CFLAGS)
 
 TGT_CXXFLAGS += $(OPT) $(CXXSTD) -ggdb3
 TGT_CXXFLAGS += $(ARCH_FLAGS)
@@ -64,6 +66,7 @@ TGT_CXXFLAGS += -Werror
 TGT_CXXFLAGS += -fno-common
 TGT_CXXFLAGS += -ffunction-sections -fdata-sections
 TGT_CXXFLAGS += -Wextra -Wshadow -Wredundant-decls  -Weffc++
+TGT_CXXFLAGS += $(LVGL_CFLAGS)
 
 TGT_ASFLAGS += $(OPT) $(ARCH_FLAGS) -ggdb3
 
@@ -99,6 +102,10 @@ LDLIBS += -Wl,--start-group -lc -lgcc -lnosys -Wl,--end-group
 
 all: $(PROJECT).elf $(PROJECT).bin $(PROJECT).list $(PROJECT).lss
 flash: $(PROJECT).flash
+
+# We need to disable warnings for some source code in LittleVGL
+$(BUILD_DIR)/lv_hal_disp.o    : TGT_CFLAGS += -Wno-unused-parameter
+$(BUILD_DIR)/lv_img_decoder.o : TGT_CFLAGS += -Wno-unused-parameter
 
 # Need a special rule to have a bin dir
 $(BUILD_DIR)/%.o: %.c
