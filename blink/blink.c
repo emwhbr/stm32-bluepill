@@ -1,8 +1,8 @@
 #include "libopencm3/stm32/rcc.h"
 #include "libopencm3/stm32/gpio.h"
 
-#include "../shared/uart.h"
-#include "../shared/systick.h"
+#include "uart.h"
+#include "systick.h"
 
 /////////////////////////////////////////////////////////////
 

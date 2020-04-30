@@ -1,11 +1,11 @@
+#include <stddef.h>
+
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/spi.h>
 
-#include <FreeRTOS.h>
-#include <task.h>
-
 #include "ssd1306.h"
+#include "dwt_delay.h"
 
 //
 // Implementation notes:
@@ -38,12 +38,13 @@
 #define SSD1306_DC_LO  gpio_clear(SSD1306_GPIO_PORT, SSD1306_GPIO_PIN_DC)
 
 // SPI
-#define SSD1306_SPI       SPI1
-#define SSD1306_SPI_RCC   RCC_SPI1
-#define SSD1306_SPI_PORT  GPIOA
-#define SSD1306_SPI_NSS   GPIO4
-#define SSD1306_SPI_SCK   GPIO5
-#define SSD1306_SPI_MOSI  GPIO7
+#define SSD1306_SPI            SPI1
+#define SSD1306_SPI_RCC        RCC_SPI1
+#define SSD1306_SPI_GPIO_RCC   RCC_GPIOA
+#define SSD1306_SPI_GPIO_PORT  GPIOA
+#define SSD1306_SPI_NSS        GPIO4
+#define SSD1306_SPI_SCK        GPIO5
+#define SSD1306_SPI_MOSI       GPIO7
 
 // internal functions
 static void ssd1306_gpio_init(void);
@@ -180,23 +181,24 @@ static void ssd1306_hw_reset(void)
 {
    // according to ref[2] : reset shall be kept low for at least 3us
    SSD1306_RST_LO;
-   vTaskDelay(pdMS_TO_TICKS(1));
+   dwt_delay(5);
    SSD1306_RST_HI;
 
    // according to ref[2] : SEG/COM will be on after 100ms
-   vTaskDelay(pdMS_TO_TICKS(100));
+   dwt_delay(100000);
 }
 
 /////////////////////////////////////////////////////////////
 
 static void ssd1306_spi_init(void)
 {
+   rcc_periph_clock_enable(SSD1306_SPI_GPIO_RCC);
    rcc_periph_clock_enable(SSD1306_SPI_RCC);
 
    spi_reset(SSD1306_SPI);
 
    gpio_set_mode(
-      SSD1306_SPI_PORT,
+      SSD1306_SPI_GPIO_PORT,
       GPIO_MODE_OUTPUT_50_MHZ,
       GPIO_CNF_OUTPUT_ALTFN_PUSHPULL,
       SSD1306_SPI_NSS | SSD1306_SPI_SCK | SSD1306_SPI_MOSI
@@ -251,8 +253,6 @@ static void ssd1306_write_data(uint8_t data)
 {
    SSD1306_DC_HI;
    ssd1306_spi_write(data);
-
-   //vTaskDelay(pdMS_TO_TICKS(1));
 }
 
 /////////////////////////////////////////////////////////////

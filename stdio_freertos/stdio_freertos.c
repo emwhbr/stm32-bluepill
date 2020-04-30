@@ -6,7 +6,7 @@
 #include <FreeRTOS.h>
 #include <task.h>
 
-#include "../shared/uart.h"
+#include "uart.h"
 
 /////////////////////////////////////////////////////////////
 

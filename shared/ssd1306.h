@@ -1,6 +1,8 @@
 #ifndef __SSD1306_H__
 #define __SSD1306_H__
 
+#include <stdint.h>
+
 #define SSD1306_SCREEN_WIDTH   128
 #define SSD1306_SCREEN_HEIGHT   64
 

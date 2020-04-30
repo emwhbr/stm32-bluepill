@@ -5,9 +5,14 @@
 
 #include <lvgl/lvgl.h>
 
+#include "dwt_delay.h"
+#include "ssd1306.h"
+
 /////////////////////////////////////////////////////////////
 
 static volatile uint8_t task_handle_flag = 0;
+
+static uint8_t g_framebuffer[SSD1306_SCREEN_WIDTH * SSD1306_SCREEN_HEIGHT/8];
 
 /////////////////////////////////////////////////////////////
 
@@ -50,7 +55,7 @@ static void init_littlevgl(void)
 
 static void init_littlevgl_tasks(void)
 {
-   // LittlevGL internal timing is driven by TM4
+   // LittlevGL internal timing is driven by TIM4
 
    rcc_periph_clock_enable(RCC_TIM4);
 
@@ -91,11 +96,34 @@ void tim4_isr(void)
 
 /////////////////////////////////////////////////////////////
 
+static void test_ssd1306_flush_screen(void)
+{
+   ssd1306_flush(g_framebuffer,
+                 0, 0,
+                 SSD1306_SCREEN_WIDTH - 1, SSD1306_SCREEN_HEIGHT-1);
+}
+
+/////////////////////////////////////////////////////////////
+
+static void test_ssd1306_clear_screen(void)
+{
+   memset(g_framebuffer, 0, sizeof(g_framebuffer));
+   test_ssd1306_flush_screen();
+}
+
+/////////////////////////////////////////////////////////////
+
 int main(void)
 {
    // initialize hardware
    init_clock();
    init_gpio();
+   dwt_delay_init();
+   ssd1306_init();
+
+   test_ssd1306_clear_screen();
+   test_ssd1306_flush_screen();
+   ssd1306_invert(1);
 
    // USER_LED: turn on
    gpio_clear(GPIOC, GPIO13);
@@ -108,11 +136,11 @@ int main(void)
 
    while (1)
    {
-      // wait for signal from TM4 ISR each 10ms
+      // wait for signal from TIM4 ISR each 10ms
       task_handle_flag = 0;
       while (!task_handle_flag);
 
-      // handle LittlevGL realated tasks
+      // handle LittlevGL related tasks
       //lv_task_handler();
 
       // toggle USER_LED every 250ms

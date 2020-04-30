@@ -7,8 +7,8 @@
 #include <FreeRTOS.h>
 #include <task.h>
 
-#include "../shared/uart.h"
-
+#include "uart.h"
+#include "dwt_delay.h"
 #include "ssd1306.h"
 
 
@@ -260,6 +260,7 @@ int main(void)
    init_clock();
    init_gpio();
    uart_init();
+   dwt_delay_init();
 
    printf("\nssd1306_freertos - started\n");
 

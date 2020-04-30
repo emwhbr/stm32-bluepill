@@ -4,7 +4,7 @@
 #include <FreeRTOS.h>
 #include <task.h>
 
-#include "../shared/uart.h"
+#include "uart.h"
 
 extern void vApplicationStackOverflowHook(xTaskHandle *pxTask, signed portCHAR *pcTaskName);
 

@@ -1,7 +1,7 @@
 #include "libopencm3/cm3/nvic.h"
 #include "libopencm3/cm3/systick.h"
 
-#include "../shared/systick.h"
+#include "systick.h"
 
 volatile uint32_t g_systick_ms = 0;  // millisecond counter, overflow in 49.7 days
 

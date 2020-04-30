@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include "../shared/uart.h"
+#include "uart.h"
 
 /////////////////////////////////////////////////////////////
 
