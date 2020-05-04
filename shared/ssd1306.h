@@ -13,6 +13,13 @@ typedef enum
    SSD1306_COLOR_SWAP  = 2
 } SSD1306_COLOR;
 
+struct ssd1306_area_t
+{
+   uint16_t x1;
+   uint16_t y1;
+   uint16_t x2;
+   uint16_t y2;
+};
 
 void ssd1306_init(void);
 
@@ -27,5 +34,7 @@ SSD1306_COLOR ssd1306_get_pixel(const uint8_t *buf, uint16_t buf_w, uint16_t x, 
 void ssd1306_flush(const uint8_t *buf,
                    uint16_t x1, uint16_t y1,
                    uint16_t x2, uint16_t y2);
+
+void ssd1306_rounder(struct ssd1306_area_t *area);
 
 #endif

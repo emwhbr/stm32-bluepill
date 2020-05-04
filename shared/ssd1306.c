@@ -329,7 +329,7 @@ void ssd1306_flush(const uint8_t *buf,
    uint8_t page_start = y1 / 8;
    uint8_t page_end   = y2 / 8;
 
-   for(uint8_t page=page_start; page <= page_end; page++)
+   for (uint8_t page=page_start; page <= page_end; page++)
    {
       // set start page and column
       ssd1306_write_command(SSD1306_SET_PAGE_START | page);
@@ -337,9 +337,19 @@ void ssd1306_flush(const uint8_t *buf,
       ssd1306_write_command(SSD1306_SET_HI_COL_START | ((x1 >> 4) & 0x0f) );
 
       // send data for page
-      for(uint16_t col=x1; col <= x2; col++)
+      for (uint16_t col=x1; col <= x2; col++)
       {
          ssd1306_write_data(*buf++);
       }
     }
+}
+
+/////////////////////////////////////////////////////////////
+
+void ssd1306_rounder(struct ssd1306_area_t *area)
+{
+   // Update the areas as needed, can be only larger.
+   // We always have lines 8 px height.
+   area->y1 = (area->y1 & (~0x7)); 
+   area->y2 = (area->y2 & (~0x7)) + 7;
 }

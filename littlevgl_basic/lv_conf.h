@@ -3,13 +3,15 @@
 
 #include <stdint.h>
 
+#include "ssd1306.h"
+
 /*====================
    Graphical settings
  *====================*/
 
 /* Maximal horizontal and vertical resolution to support by the library.*/
-#define LV_HOR_RES_MAX          (128)
-#define LV_VER_RES_MAX          (64)
+#define LV_HOR_RES_MAX          (SSD1306_SCREEN_WIDTH)
+#define LV_VER_RES_MAX          (SSD1306_SCREEN_HEIGHT)
 
 /* Color depth:
  * - 1:  1 byte per pixel
@@ -57,7 +59,7 @@ typedef int16_t lv_coord_t;
  * The graphical objects and other related data are stored here. */
 
 /* 1: use custom malloc/free, 0: use the built-in `lv_mem_alloc` and `lv_mem_free` */
-#define LV_MEM_CUSTOM      0
+#define LV_MEM_CUSTOM      1
 #if LV_MEM_CUSTOM == 0
 /* Size of the memory used by `lv_mem_alloc` in bytes (>= 2kB)*/
 #  define LV_MEM_SIZE    (1U * 1024U)
@@ -115,7 +117,7 @@ typedef int16_t lv_coord_t;
  *==================*/
 
 /*1: Enable the Animations */
-#define LV_USE_ANIMATION        0
+#define LV_USE_ANIMATION        1
 #if LV_USE_ANIMATION
 
 /*Declare the type of the user data of animations (can be e.g. `void *`, `int`, `struct`)*/
@@ -273,7 +275,7 @@ typedef void * lv_indev_drv_user_data_t;            /*Type of user data in the i
 #define LV_USE_THEME_DEFAULT    0   /*Built mainly from the built-in styles. Consumes very few RAM*/
 #define LV_USE_THEME_ALIEN      0   /*Dark futuristic theme*/
 #define LV_USE_THEME_NIGHT      0   /*Dark elegant theme*/
-#define LV_USE_THEME_MONO       0   /*Mono color theme for monochrome displays*/
+#define LV_USE_THEME_MONO       1   /*Mono color theme for monochrome displays*/
 #define LV_USE_THEME_MATERIAL   0   /*Flat theme with bold colors and light shadows*/
 #define LV_USE_THEME_ZEN        0   /*Peaceful, mainly light theme */
 #define LV_USE_THEME_NEMO       0   /*Water-like theme based on the movie "Finding Nemo"*/
@@ -290,7 +292,7 @@ typedef void * lv_indev_drv_user_data_t;            /*Type of user data in the i
 
 /* Robot fonts with bpp = 4
  * https://fonts.google.com/specimen/Roboto  */
-#define LV_FONT_ROBOTO_12    0
+#define LV_FONT_ROBOTO_12    1
 #define LV_FONT_ROBOTO_16    0
 #define LV_FONT_ROBOTO_22    0
 #define LV_FONT_ROBOTO_28    0
@@ -312,8 +314,8 @@ typedef void * lv_indev_drv_user_data_t;            /*Type of user data in the i
 #define LV_FONT_CUSTOM_DECLARE
 
 /*Always set a default font from the built-in fonts*/
-//#define LV_FONT_DEFAULT        &lv_font_roboto_12
-#define LV_FONT_DEFAULT        &lv_font_unscii_8
+#define LV_FONT_DEFAULT        &lv_font_roboto_12
+//#define LV_FONT_DEFAULT        &lv_font_unscii_8
 
 /* Enable it if you have fonts with a lot of characters.
  * The limit depends on the font size, font face and bpp
@@ -407,7 +409,7 @@ typedef void * lv_obj_user_data_t;
 #define LV_USE_ARC      0
 
 /*Bar (dependencies: -)*/
-#define LV_USE_BAR      0
+#define LV_USE_BAR      1
 
 /*Button (dependencies: lv_cont*/
 #define LV_USE_BTN      0
@@ -483,7 +485,7 @@ typedef void * lv_obj_user_data_t;
 #define LV_USE_LED      0
 
 /*Line (dependencies: -*/
-#define LV_USE_LINE     1
+#define LV_USE_LINE     0
 
 /*List (dependencies: lv_page, lv_btn, lv_label, (lv_img optionally for icons ))*/
 #define LV_USE_LIST     0
