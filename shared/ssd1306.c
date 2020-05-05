@@ -3,6 +3,8 @@
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/spi.h>
+#include <libopencm3/stm32/dma.h>
+#include "libopencm3/cm3/nvic.h"
 
 #include "ssd1306.h"
 #include "dwt_delay.h"
@@ -25,7 +27,17 @@
 
 /////////////////////////////////////////////////////////////
 
-// GPIO
+// define how data shall be sent to the display
+#define SSD1306_USE_SPI_DMA  1
+#define SSD1306_USE_SPI_PIO  0
+
+#if SSD1306_USE_SPI_DMA == 1 && SSD1306_USE_SPI_PIO == 1
+#error Not allowed to use both SSD1306_USE_SPI_DMA and SSD1306_USE_SPI_PIO
+#elif SSD1306_USE_SPI_DMA == 0 && SSD1306_USE_SPI_PIO == 0
+#error Must use one of SSD1306_USE_SPI_DMA or SSD1306_USE_SPI_PIO
+#endif
+
+// GPIO support
 #define SSD1306_GPIO_RCC       RCC_GPIOC
 #define SSD1306_GPIO_PORT      GPIOC
 #define SSD1306_GPIO_PIN_RST   GPIO15  // Reset signal pin
@@ -37,7 +49,7 @@
 #define SSD1306_DC_HI  gpio_set(SSD1306_GPIO_PORT, SSD1306_GPIO_PIN_DC)
 #define SSD1306_DC_LO  gpio_clear(SSD1306_GPIO_PORT, SSD1306_GPIO_PIN_DC)
 
-// SPI
+// SPI support
 #define SSD1306_SPI            SPI1
 #define SSD1306_SPI_RCC        RCC_SPI1
 #define SSD1306_SPI_GPIO_RCC   RCC_GPIOA
@@ -45,6 +57,27 @@
 #define SSD1306_SPI_NSS        GPIO4
 #define SSD1306_SPI_SCK        GPIO5
 #define SSD1306_SPI_MOSI       GPIO7
+#define SSD1306_SPI_DR         SPI1_DR
+
+// DMA support
+#if SSD1306_USE_SPI_DMA == 1
+
+#define SSD1306_SPI_DMA_RCC  RCC_DMA1
+#define SSD1306_SPI_DMA_CTL  DMA1
+#define SSD1306_SPI_DMA_CHN  DMA_CHANNEL3
+#define SSD1306_SPI_DMA_IRQ  NVIC_DMA1_CHANNEL3_IRQ
+
+#define SSD1306_SPI_DMA_PERIPHERAL_ADDR ((uint32_t)&SSD1306_SPI_DR)
+
+static volatile uint8_t spi_dma_done = 0;
+
+typedef enum
+{
+   SSD1306_SPI_DMA_COMMAND,
+   SSD1306_SPI_DMA_DATA
+} SSD1306_SPI_DMA_TYPE;
+
+#endif // SSD1306_USE_SPI_DMA
 
 // internal functions
 static void ssd1306_gpio_init(void);
@@ -52,7 +85,13 @@ static void ssd1306_hw_reset(void);
 static void ssd1306_spi_init(void);
 static void ssd1306_spi_write(uint8_t val);
 static void ssd1306_write_command(uint8_t cmd);
+#if SSD1306_USE_SPI_PIO == 1
 static void ssd1306_write_data(uint8_t data);
+#endif
+#if SSD1306_USE_SPI_DMA == 1
+static void ssd1306_spi_dma_init(void);
+static void ssd1306_spi_dma_start(SSD1306_SPI_DMA_TYPE type, const uint8_t *buf, uint16_t size);
+#endif
 
 /////////////////////////////////////////////////////////////
 // Fundamental Command Table
@@ -188,6 +227,77 @@ static void ssd1306_hw_reset(void)
    dwt_delay(100000);
 }
 
+#if SSD1306_USE_SPI_DMA == 1
+
+/////////////////////////////////////////////////////////////
+
+static void ssd1306_spi_dma_init(void)
+{
+   rcc_periph_clock_enable(SSD1306_SPI_DMA_RCC);
+
+   dma_channel_reset(SSD1306_SPI_DMA_CTL, SSD1306_SPI_DMA_CHN);
+
+   dma_set_peripheral_address(SSD1306_SPI_DMA_CTL, SSD1306_SPI_DMA_CHN, SSD1306_SPI_DMA_PERIPHERAL_ADDR);
+   dma_disable_memory_increment_mode(SSD1306_SPI_DMA_CTL, SSD1306_SPI_DMA_CHN);
+   dma_set_peripheral_size(SSD1306_SPI_DMA_CTL, SSD1306_SPI_DMA_CHN, DMA_CCR_PSIZE_8BIT);
+
+   dma_set_read_from_memory(SSD1306_SPI_DMA_CTL, SSD1306_SPI_DMA_CHN);
+   dma_enable_memory_increment_mode(SSD1306_SPI_DMA_CTL, SSD1306_SPI_DMA_CHN);
+   dma_set_memory_size(SSD1306_SPI_DMA_CTL, SSD1306_SPI_DMA_CHN,DMA_CCR_MSIZE_8BIT);
+
+   dma_set_priority(SSD1306_SPI_DMA_CTL, SSD1306_SPI_DMA_CHN, DMA_CCR_PL_HIGH);
+   dma_enable_transfer_complete_interrupt(SSD1306_SPI_DMA_CTL, SSD1306_SPI_DMA_CHN);
+
+   nvic_set_priority(SSD1306_SPI_DMA_IRQ, 0);
+   nvic_enable_irq(SSD1306_SPI_DMA_IRQ);
+}
+
+/////////////////////////////////////////////////////////////
+
+void dma1_channel3_isr(void)
+{
+   // check if DMA transfer complete
+   if (dma_get_interrupt_flag(SSD1306_SPI_DMA_CTL, SSD1306_SPI_DMA_CHN, DMA_TCIF))
+   {
+      dma_clear_interrupt_flags(SSD1306_SPI_DMA_CTL, SSD1306_SPI_DMA_CHN, DMA_TCIF);
+
+      // wait until last SPI transfer is completed
+      while (SPI_SR(SSD1306_SPI) & SPI_SR_BSY);
+      spi_disable(SSD1306_SPI);
+
+      spi_disable_tx_dma(SSD1306_SPI);
+      dma_disable_channel(SSD1306_SPI_DMA_CTL, SSD1306_SPI_DMA_CHN);
+      spi_dma_done = 1; // signal DMA done
+   }
+}
+
+/////////////////////////////////////////////////////////////
+
+static void ssd1306_spi_dma_start(SSD1306_SPI_DMA_TYPE type, const uint8_t *buf, uint16_t size)
+{
+   // configure the DMA
+   dma_set_memory_address(SSD1306_SPI_DMA_CTL, SSD1306_SPI_DMA_CHN, (uint32_t)buf);
+   dma_set_number_of_data(SSD1306_SPI_DMA_CTL, SSD1306_SPI_DMA_CHN, size);
+
+   switch (type)
+   {
+      case SSD1306_SPI_DMA_COMMAND:
+         SSD1306_DC_LO;
+         break;
+      case SSD1306_SPI_DMA_DATA:
+         SSD1306_DC_HI;
+         break;
+   }
+   spi_enable(SSD1306_SPI);
+
+   // start the DMA transfer
+   spi_dma_done = 0;
+   dma_enable_channel(SSD1306_SPI_DMA_CTL, SSD1306_SPI_DMA_CHN);
+   spi_enable_tx_dma(SSD1306_SPI);
+}
+
+#endif // SSD1306_USE_SPI_DMA
+
 /////////////////////////////////////////////////////////////
 
 static void ssd1306_spi_init(void)
@@ -224,6 +334,10 @@ static void ssd1306_spi_init(void)
    spi_set_bidirectional_transmit_only_mode(SSD1306_SPI);
    spi_disable_software_slave_management(SSD1306_SPI);
    spi_enable_ss_output(SSD1306_SPI);
+
+#if SSD1306_USE_SPI_DMA == 1
+   ssd1306_spi_dma_init();
+#endif
 }
 
 /////////////////////////////////////////////////////////////
@@ -247,6 +361,8 @@ static void ssd1306_write_command(uint8_t cmd)
    ssd1306_spi_write(cmd);
 }
 
+#if SSD1306_USE_SPI_PIO == 1
+
 /////////////////////////////////////////////////////////////
 
 static void ssd1306_write_data(uint8_t data)
@@ -254,6 +370,8 @@ static void ssd1306_write_data(uint8_t data)
    SSD1306_DC_HI;
    ssd1306_spi_write(data);
 }
+
+#endif
 
 /////////////////////////////////////////////////////////////
 
@@ -267,10 +385,19 @@ void ssd1306_init(void)
    ssd1306_hw_reset();
 
    // initialization sequence
+#if SSD1306_USE_SPI_PIO == 1
+   // use PIO
    for (size_t i=0; i < sizeof(ssd1306_init_commands); ++i)
    {
       ssd1306_write_command(ssd1306_init_commands[i]);
    }
+#else
+   // use DMA
+   ssd1306_spi_dma_start(SSD1306_SPI_DMA_COMMAND, ssd1306_init_commands, sizeof(ssd1306_init_commands));
+
+   // wait until DMA completed
+   while (!spi_dma_done) ;
+#endif
 }
 
 /////////////////////////////////////////////////////////////
@@ -332,15 +459,39 @@ void ssd1306_flush(const uint8_t *buf,
    for (uint8_t page=page_start; page <= page_end; page++)
    {
       // set start page and column
+#if SSD1306_USE_SPI_PIO == 1
+      // use PIO
       ssd1306_write_command(SSD1306_SET_PAGE_START | page);
-      ssd1306_write_command(SSD1306_SET_LO_COL_START | (x1 & 0x0f) ) ;
+      ssd1306_write_command(SSD1306_SET_LO_COL_START | (x1 & 0x0f) );
       ssd1306_write_command(SSD1306_SET_HI_COL_START | ((x1 >> 4) & 0x0f) );
+#else
+      // use DMA
+      uint8_t addr_cmd[3];
+      addr_cmd[0] = SSD1306_SET_PAGE_START | page;
+      addr_cmd[1] = SSD1306_SET_LO_COL_START | (x1 & 0x0f);
+      addr_cmd[2] = SSD1306_SET_HI_COL_START | ((x1 >> 4) & 0x0f);
+      ssd1306_spi_dma_start(SSD1306_SPI_DMA_COMMAND, addr_cmd, 3);
 
-      // send data for page
+      // wait until DMA completed
+      while (!spi_dma_done) ;
+#endif
+
+      // send page data
+#if SSD1306_USE_SPI_PIO == 1
+      // use PIO
       for (uint16_t col=x1; col <= x2; col++)
       {
          ssd1306_write_data(*buf++);
       }
+#else
+      // use DMA
+      const uint16_t dma_size_bytes = x2 - x1 + 1;
+      ssd1306_spi_dma_start(SSD1306_SPI_DMA_DATA, buf, dma_size_bytes);
+      buf += dma_size_bytes;
+
+      // wait until DMA completed
+      while (!spi_dma_done) ;
+#endif
     }
 }
 
