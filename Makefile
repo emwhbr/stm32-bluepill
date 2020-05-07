@@ -2,7 +2,11 @@
 #  Top Level: STM32F103C8T6 "Bluepill" Projects
 ######################################################################
 
-PROJECTS = blink blink_freertos stdio_freertos ssd1306_freertos littlevgl_basic
+PROJECTS =  blink blink_freertos
+PROJECTS += stdio_freertos
+PROJECTS += ssd1306_freertos
+PROJECTS += littlevgl_basic
+PROJECTS += enc28j60_freertos
 
 .PHONY = libopencm3
 
