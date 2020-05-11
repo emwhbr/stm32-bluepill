@@ -143,6 +143,25 @@
  #define ENC28J60_ECON1_BSEL1   (1 << 1)
  #define ENC28J60_ECON1_BSEL0   (1 << 0)
 
+// control register EIE, Ethernet Interupt Enable Register
+#define ENC28J60_EIE_INTIE      (1 << 7)
+#define ENC28J60_EIE_PKTIE      (1 << 6)
+#define ENC28J60_EIE_DMAIE      (1 << 5)
+#define ENC28J60_EIE_LINKIE     (1 << 4)
+#define ENC28J60_EIE_TXIE       (1 << 3)
+#define ENC28J60_EIE_WOLIE      (1 << 2)
+#define ENC28J60_EIE_TXERIE     (1 << 1)
+#define ENC28J60_EIE_RXERIE     (1 << 0)
+
+// control register EIR, Ethernet Interrupt Request (flag) Register
+#define ENC28J60_EIR_PKTIF      (1 << 6)
+#define ENC28J60_EIR_DMAIF      (1 << 5)
+#define ENC28J60_EIR_LINKIF     (1 << 4)
+#define ENC28J60_EIR_TXIF       (1 << 3)
+#define ENC28J60_EIR_WOLIF      (1 << 2)
+#define ENC28J60_EIR_TXERIF     (1 << 1)
+#define ENC28J60_EIR_RXERIF     (1 << 0)
+
 // control register MICMD, MII Command Register
 #define ENC28J60_MICMD_MIISCAN  (1 << 1)
 #define ENC28J60_MICMD_MIIRD    (1 << 0)
@@ -151,6 +170,25 @@
 #define ENC28J60_MISTAT_NVALID  (1 << 2)
 #define ENC28J60_MISTAT_SCAN    (1 << 1)
 #define ENC28J60_MISTAT_BUSY    (1 << 0)
+
+// control register MACON3, MAC Control Register 3
+#define ENC28J60_MACON3_PADCFG2  (1 << 7)
+#define ENC28J60_MACON3_PADCFG1  (1 << 6)
+#define ENC28J60_MACON3_PADCFG0  (1 << 5)
+#define ENC28J60_MACON3_TXCRCEN  (1 << 4)
+#define ENC28J60_MACON3_PHDRLEN  (1 << 3)
+#define ENC28J60_MACON3_HFRMLEN  (1 << 2)
+#define ENC28J60_MACON3_FRMLNEN  (1 << 1)
+#define ENC28J60_MACON3_FULDPX   (1 << 0)
+
+#define ENC28J60_MACON3_PADCFG(x) ((x) << 5)
+
+// control register MACON4, MAC Control Register 4
+#define ENC28J60_MACON4_DEFER    (1 << 6)
+#define ENC28J60_MACON4_BPEN     (1 << 5)
+#define ENC28J60_MACON4_NOBKOFF  (1 << 4)
+#define ENC28J60_MACON4_LONGPRE  (1 << 1)
+#define ENC28J60_MACON4_PUREPRE  (1 << 0)
 
 //////////////////////////////////////////////////////////////////////////
 //                   PHY REGISTERS

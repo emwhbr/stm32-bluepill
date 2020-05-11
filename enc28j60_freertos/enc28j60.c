@@ -54,6 +54,18 @@
 #define ENC28J60_SPI_CMD_BFC  (0b10100000) // bit field clear 
 #define ENC28J60_SPI_CMD_SRC  (0b11111111) // soft system reset
 
+// receive and transmit buffers
+#define ENC28J60_RX_BUFFER_START  0x0000  // RX : 6KB
+#define ENC28J60_RX_BUFFER_END    0x17FF
+#define ENC28J60_TX_BUFFER_START  0x1800  // TX : 2KB
+#define ENC28J60_TX_BUFFER_END    0x1FFF
+
+// helper macros
+#define ENC28J60_ETH_MAX_FRAME_SIZE  1518
+
+#define MSB(value) (((value) & 0xff00) >> 8)
+#define LSB(value)  ((value) & 0x00ff)
+
 // global variables
 static uint16_t g_current_bank = ENC28J60_BANK0;
 
@@ -69,6 +81,8 @@ static void enc28j60_write_ctrl_register(uint16_t addr, uint8_t data);
 
 static uint16_t enc28j60_read_phy_register(uint8_t addr);
 static void enc28j60_write_phy_register(uint8_t addr, uint16_t data);
+
+static void enc28j60_write_eth_buffer(const uint8_t *buf, size_t len);
 
 /////////////////////////////////////////////////////////////
 
@@ -292,11 +306,29 @@ static void enc28j60_write_phy_register(uint8_t addr, uint16_t data)
 {
    enc28j60_write_ctrl_register(ENC28J60_MIREGADR, addr);
 
-   enc28j60_write_ctrl_register(ENC28J60_MIWRL, data & 0x00ff);
-   enc28j60_write_ctrl_register(ENC28J60_MIWRH, (data & 0xff00) >> 8);
+   enc28j60_write_ctrl_register(ENC28J60_MIWRL, LSB(data));
+   enc28j60_write_ctrl_register(ENC28J60_MIWRH, MSB(data));
    dwt_delay(11); // 10.24us according to ref[1], section 3.3.2
 
    while ( (enc28j60_read_ctrl_register(ENC28J60_MISTAT) & ENC28J60_MISTAT_BUSY) == ENC28J60_MISTAT_BUSY ) ;
+}
+
+/////////////////////////////////////////////////////////////
+
+static void enc28j60_write_eth_buffer(const uint8_t *buf, size_t len)
+{
+   ENC28J60_SPI_NSS_LO;
+
+   enc28j60_spi_xfer(ENC28J60_SPI_CMD_WBM);
+
+   enc28j60_spi_xfer(0x00); // packet control byte
+
+   for (size_t i=0; i < len; i++)
+   {
+      enc28j60_spi_xfer(buf[i]);
+   }
+
+   ENC28J60_SPI_NSS_HI;
 }
 
 /////////////////////////////////////////////////////////////
@@ -326,7 +358,87 @@ void enc28j60_init(void)
       return;
    }
 
-   // TBD: This is only for test (LEDA-green=slow, LEDB-yellow=fast)
+   // define the receive buffer, the transmit buffer is considered to be the rest
+   enc28j60_write_ctrl_register(ENC28J60_ERXSTL, LSB(ENC28J60_RX_BUFFER_START));
+   enc28j60_write_ctrl_register(ENC28J60_ERXSTH, MSB(ENC28J60_RX_BUFFER_START));
+   enc28j60_write_ctrl_register(ENC28J60_ERXNDL, LSB(ENC28J60_RX_BUFFER_END));
+   enc28j60_write_ctrl_register(ENC28J60_ERXNDH, MSB(ENC28J60_RX_BUFFER_END));
+
+   // MAC => Half-Duplex mode
+   // - enable automatic padding to at least 64 bytes
+   // - always append a valid CRC
+   // - check frame length
+   enc28j60_write_ctrl_register(ENC28J60_MACON3,
+                                ENC28J60_MACON3_PADCFG(3) | ENC28J60_MACON3_TXCRCEN | ENC28J60_MACON3_FRMLNEN);
+
+   // MAC will wait indefinitely for it to become free
+   enc28j60_write_ctrl_register(ENC28J60_MACON4, ENC28J60_MACON4_DEFER);
+
+   // maximum frame length that will be permitted to be received or transmitted
+   enc28j60_write_ctrl_register(ENC28J60_MAMXFLL, LSB(ENC28J60_ETH_MAX_FRAME_SIZE));
+   enc28j60_write_ctrl_register(ENC28J60_MAMXFLH, MSB(ENC28J60_ETH_MAX_FRAME_SIZE));
+
+   // configure Back-to-Back Inter-Packet Gap
+   enc28j60_write_ctrl_register(ENC28J60_MABBIPG, 0x12);
+
+   // configure the Non-Back-to-Back Inter-Packet Gap
+   enc28j60_write_ctrl_register(ENC28J60_MAIPGL, 0x12);
+   enc28j60_write_ctrl_register(ENC28J60_MAIPGH, 0x0C);
+
+   // retransmission and collison window 
+   //enc28j60_write_ctrl_register(ENC28J60_MACLCON1, xx);
+   //enc28j60_write_ctrl_register(ENC28J60_MACLCON2, xx);
+
+   // PHY => Half-Duplex mode
+   // - prevent automatic loopback of the data which is transmitted
+   enc28j60_write_phy_register(ENC28J60_PHCON1, 0x0000);
+   enc28j60_write_phy_register(ENC28J60_PHCON2, ENC28J60_PHCON2_HDLDIS);
+
+   /*
+   // LEDs
+   // - LEDA (green) slow
+   // - LEDB-(yellow) fast
    enc28j60_write_phy_register(ENC28J60_PHLCON,
                                ENC28J60_PHLCON_LACFG(0xb) | ENC28J60_PHLCON_LBCFG(0xa));
+                               */
+   // LEDs
+   // - LEDA (green)  - transmit and receive activity (stretchable)
+   // - LEDB-(yellow) - link status
+   enc28j60_write_phy_register(ENC28J60_PHLCON,
+                               ENC28J60_PHLCON_LACFG(0b0111) | \
+                               ENC28J60_PHLCON_LBCFG(0b0100) | \
+                               ENC28J60_PHLCON_LFRQ(0)       | \
+                               ENC28J60_PHLCON_STRCH);
+}
+
+/////////////////////////////////////////////////////////////
+
+void enc28j60_test_send_packet(const uint8_t *buf, size_t len)
+{
+   // point to the first byte in the data payload
+   enc28j60_write_ctrl_register(ENC28J60_EWRPTL, LSB(ENC28J60_TX_BUFFER_START));
+   enc28j60_write_ctrl_register(ENC28J60_EWRPTH, MSB(ENC28J60_TX_BUFFER_START));
+
+   // copy data to transmit buffer
+   enc28j60_write_eth_buffer(buf, len);
+
+   // transmit buffer location
+   enc28j60_write_ctrl_register(ENC28J60_ETXSTL, LSB(ENC28J60_TX_BUFFER_START));
+   enc28j60_write_ctrl_register(ENC28J60_ETXSTH, MSB(ENC28J60_TX_BUFFER_START));
+   enc28j60_write_ctrl_register(ENC28J60_ETXNDL, LSB(ENC28J60_TX_BUFFER_START + len));
+   enc28j60_write_ctrl_register(ENC28J60_ETXNDH, MSB(ENC28J60_TX_BUFFER_START + len));
+
+   // clear interrupt flags and enable interrupts
+   enc28j60_bfc_eth_register(ENC28J60_EIR, ENC28J60_EIR_TXIF | ENC28J60_EIR_TXERIF);
+   enc28j60_bfs_eth_register(ENC28J60_EIE, ENC28J60_EIE_TXIE | ENC28J60_EIE_TXERIE);
+
+   // start transmission
+   enc28j60_bfs_eth_register(ENC28J60_ECON1, ENC28J60_ECON1_TXRTS);
+
+   // wait for done
+   while ( !(enc28j60_read_ctrl_register(ENC28J60_EIR) & (ENC28J60_EIR_TXIF | ENC28J60_EIR_TXERIF)) ) ;
+
+   // clear interrupt flags and disable interrupts
+   enc28j60_bfc_eth_register(ENC28J60_EIR, ENC28J60_EIR_TXIF | ENC28J60_EIR_TXERIF);
+   enc28j60_bfc_eth_register(ENC28J60_EIE, ENC28J60_EIE_TXIE | ENC28J60_EIE_TXERIE);
 }
