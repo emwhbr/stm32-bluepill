@@ -1,6 +1,11 @@
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/spi.h>
+#include <libopencm3/stm32/dma.h>
+#include "libopencm3/cm3/nvic.h"
+
+#include <FreeRTOS.h>
+#include <semphr.h>
 
 #include "enc28j60.h"
 #include "enc28j60_defs.h"
@@ -28,9 +33,13 @@
 #define ENC28J60_GPIO_PORT      GPIOA
 #define ENC28J60_GPIO_PIN_RST   GPIO11  // Reset signal
 #define ENC28J60_GPIO_PIN_INT   GPIO12  // Interrupt signal
+#define ENC28J60_GPIO_PIN_DBG   GPIO8   // Debug signal
 
 #define ENC28J60_RST_HI  gpio_set(ENC28J60_GPIO_PORT,   ENC28J60_GPIO_PIN_RST)
 #define ENC28J60_RST_LO  gpio_clear(ENC28J60_GPIO_PORT, ENC28J60_GPIO_PIN_RST)
+
+#define ENC28J60_DBG_HI  gpio_set(ENC28J60_GPIO_PORT,   ENC28J60_GPIO_PIN_DBG)
+#define ENC28J60_DBG_LO  gpio_clear(ENC28J60_GPIO_PORT, ENC28J60_GPIO_PIN_DBG)
 
 // SPI support
 #define ENC28J60_SPI            SPI2
@@ -46,6 +55,17 @@
 #define ENC28J60_SPI_NSS_HI  gpio_set(ENC28J60_SPI_GPIO_PORT,    ENC28J60_SPI_NSS)
 #define ENC28J60_SPI_NSS_LO  gpio_clear(ENC28J60_SPI_GPIO_PORT,  ENC28J60_SPI_NSS)
 
+// SPI DMA support
+#define ENC28J60_SPI_DMA_RCC  RCC_DMA1
+#define ENC28J60_SPI_DMA_CTL  DMA1
+#define ENC28J60_SPI_DMA_CHN  DMA_CHANNEL5
+#define ENC28J60_SPI_DMA_IRQ  NVIC_DMA1_CHANNEL5_IRQ
+
+#define ENC28J60_SPI_DMA_PERIPHERAL_ADDR ((uint32_t)&ENC28J60_SPI_DR)
+
+static volatile SemaphoreHandle_t xSpiDmaDoneSem = NULL;
+
+// instruction set
 #define ENC28J60_SPI_CMD_RCR  (0b00000000) // read control register
 #define ENC28J60_SPI_CMD_RBM  (0b00111010) // read buffer memory
 #define ENC28J60_SPI_CMD_WCR  (0b01000000) // write control register
@@ -72,6 +92,8 @@ static uint16_t g_current_bank = ENC28J60_BANK0;
 // internal functions
 static void enc28j60_gpio_init(void);
 static void enc28j60_spi_init(void);
+static void enc28j60_spi_dma_init(void);
+static void enc28j60_spi_tx_dma_start(const uint8_t *buf, uint16_t size);
 
 static void enc28j60_bfs_eth_register(uint16_t addr, uint8_t mask);
 static void enc28j60_bfc_eth_register(uint16_t addr, uint8_t mask);
@@ -94,9 +116,10 @@ static void enc28j60_gpio_init(void)
       ENC28J60_GPIO_PORT,
       GPIO_MODE_OUTPUT_50_MHZ,
       GPIO_CNF_OUTPUT_PUSHPULL,
-      ENC28J60_GPIO_PIN_RST);
+      ENC28J60_GPIO_PIN_RST | ENC28J60_GPIO_PIN_DBG);
 
    ENC28J60_RST_HI;
+   ENC28J60_DBG_HI;
 }
 
 /////////////////////////////////////////////////////////////
@@ -143,7 +166,7 @@ static void enc28j60_spi_init(void)
 
    spi_init_master(
       ENC28J60_SPI,
-      SPI_CR1_BAUDRATE_FPCLK_DIV_4,
+      SPI_CR1_BAUDRATE_FPCLK_DIV_2,
       SPI_CR1_CPOL_CLK_TO_0_WHEN_IDLE,
       SPI_CR1_CPHA_CLK_TRANSITION_1,
       SPI_CR1_DFF_8BIT,
@@ -155,6 +178,74 @@ static void enc28j60_spi_init(void)
    spi_enable(ENC28J60_SPI);
 
    ENC28J60_SPI_NSS_HI;
+
+   enc28j60_spi_dma_init();
+}
+
+/////////////////////////////////////////////////////////////
+
+static void enc28j60_spi_dma_init(void)
+{
+   rcc_periph_clock_enable(ENC28J60_SPI_DMA_RCC);
+
+   dma_channel_reset(ENC28J60_SPI_DMA_CTL, ENC28J60_SPI_DMA_CHN);
+
+   dma_set_peripheral_address(ENC28J60_SPI_DMA_CTL, ENC28J60_SPI_DMA_CHN, ENC28J60_SPI_DMA_PERIPHERAL_ADDR);
+   dma_disable_memory_increment_mode(ENC28J60_SPI_DMA_CTL, ENC28J60_SPI_DMA_CHN);
+   dma_set_peripheral_size(ENC28J60_SPI_DMA_CTL, ENC28J60_SPI_DMA_CHN, DMA_CCR_PSIZE_8BIT);
+
+   dma_set_read_from_memory(ENC28J60_SPI_DMA_CTL, ENC28J60_SPI_DMA_CHN);
+   dma_enable_memory_increment_mode(ENC28J60_SPI_DMA_CTL, ENC28J60_SPI_DMA_CHN);
+   dma_set_memory_size(ENC28J60_SPI_DMA_CTL, ENC28J60_SPI_DMA_CHN, DMA_CCR_MSIZE_8BIT);
+
+   dma_set_priority(ENC28J60_SPI_DMA_CTL, ENC28J60_SPI_DMA_CHN, DMA_CCR_PL_HIGH);
+   dma_enable_transfer_complete_interrupt(ENC28J60_SPI_DMA_CTL, ENC28J60_SPI_DMA_CHN);
+
+   nvic_set_priority(ENC28J60_SPI_DMA_IRQ, 0);
+   nvic_enable_irq(ENC28J60_SPI_DMA_IRQ);
+
+   // create sempahore used for DMA synchronization
+   if (xSpiDmaDoneSem == NULL)
+   {
+      xSpiDmaDoneSem = xSemaphoreCreateBinary();
+   }
+}
+
+/////////////////////////////////////////////////////////////
+
+void dma1_channel5_isr(void)
+{
+   // check if DMA transfer complete
+   if (dma_get_interrupt_flag(ENC28J60_SPI_DMA_CTL, ENC28J60_SPI_DMA_CHN, DMA_TCIF))
+   {
+      dma_clear_interrupt_flags(ENC28J60_SPI_DMA_CTL, ENC28J60_SPI_DMA_CHN, DMA_TCIF);
+
+      // wait until last SPI transfer is completed
+      while (SPI_SR(ENC28J60_SPI) & SPI_SR_BSY);
+      spi_clean_disable(ENC28J60_SPI);
+      ENC28J60_SPI_NSS_HI;
+
+      spi_disable_tx_dma(ENC28J60_SPI);
+      dma_disable_channel(ENC28J60_SPI_DMA_CTL, ENC28J60_SPI_DMA_CHN);
+
+      // signal DMA done
+      BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+      xSemaphoreGiveFromISR(xSpiDmaDoneSem, &xHigherPriorityTaskWoken);
+      portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+   }
+}
+
+/////////////////////////////////////////////////////////////
+
+static void enc28j60_spi_tx_dma_start(const uint8_t *buf, uint16_t size)
+{
+   // configure the DMA
+   dma_set_memory_address(ENC28J60_SPI_DMA_CTL, ENC28J60_SPI_DMA_CHN, (uint32_t)buf);
+   dma_set_number_of_data(ENC28J60_SPI_DMA_CTL, ENC28J60_SPI_DMA_CHN, size);
+
+   // start the DMA transfer
+   dma_enable_channel(ENC28J60_SPI_DMA_CTL, ENC28J60_SPI_DMA_CHN);
+   spi_enable_tx_dma(ENC28J60_SPI);
 }
 
 /////////////////////////////////////////////////////////////
@@ -320,15 +411,14 @@ static void enc28j60_write_eth_buffer(const uint8_t *buf, size_t len)
    ENC28J60_SPI_NSS_LO;
 
    enc28j60_spi_xfer(ENC28J60_SPI_CMD_WBM);
-
    enc28j60_spi_xfer(0x00); // packet control byte
 
-   for (size_t i=0; i < len; i++)
-   {
-      enc28j60_spi_xfer(buf[i]);
-   }
+   enc28j60_spi_tx_dma_start(buf, len);
 
-   ENC28J60_SPI_NSS_HI;
+   // wait until DMA completed
+   xSemaphoreTake(xSpiDmaDoneSem, portMAX_DELAY);
+
+   spi_enable(ENC28J60_SPI);
 }
 
 /////////////////////////////////////////////////////////////
@@ -415,12 +505,19 @@ void enc28j60_init(void)
 
 void enc28j60_test_send_packet(const uint8_t *buf, size_t len)
 {
+   // errata workaround, reset transmit logic
+   enc28j60_bfs_eth_register(ENC28J60_ECON1, ENC28J60_ECON1_TXRST);
+   enc28j60_bfc_eth_register(ENC28J60_ECON1, ENC28J60_ECON1_TXRST);
+   enc28j60_bfc_eth_register(ENC28J60_EIR, ENC28J60_EIR_TXIF | ENC28J60_EIR_TXERIF);
+
    // point to the first byte in the data payload
    enc28j60_write_ctrl_register(ENC28J60_EWRPTL, LSB(ENC28J60_TX_BUFFER_START));
    enc28j60_write_ctrl_register(ENC28J60_EWRPTH, MSB(ENC28J60_TX_BUFFER_START));
 
    // copy data to transmit buffer
+   ENC28J60_DBG_LO;
    enc28j60_write_eth_buffer(buf, len);
+   ENC28J60_DBG_HI;
 
    // transmit buffer location
    enc28j60_write_ctrl_register(ENC28J60_ETXSTL, LSB(ENC28J60_TX_BUFFER_START));
@@ -436,9 +533,10 @@ void enc28j60_test_send_packet(const uint8_t *buf, size_t len)
    enc28j60_bfs_eth_register(ENC28J60_ECON1, ENC28J60_ECON1_TXRTS);
 
    // wait for done
-   while ( !(enc28j60_read_ctrl_register(ENC28J60_EIR) & (ENC28J60_EIR_TXIF | ENC28J60_EIR_TXERIF)) ) ;
+   while ( (enc28j60_read_ctrl_register(ENC28J60_EIR) &
+            (ENC28J60_EIR_TXIF | ENC28J60_EIR_TXERIF)) == 0 ) ;
 
    // clear interrupt flags and disable interrupts
-   enc28j60_bfc_eth_register(ENC28J60_EIR, ENC28J60_EIR_TXIF | ENC28J60_EIR_TXERIF);
    enc28j60_bfc_eth_register(ENC28J60_EIE, ENC28J60_EIE_TXIE | ENC28J60_EIE_TXERIE);
+   enc28j60_bfc_eth_register(ENC28J60_EIR, ENC28J60_EIR_TXIF | ENC28J60_EIR_TXERIF);
 }
