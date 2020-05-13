@@ -102,13 +102,37 @@ static void test_create_packet(ETH_PACKET *p)
 
 /////////////////////////////////////////////////////////////
 
-static void test_enc28j60_test_send_packet(void)
+static void test_enc28j60_test_send_packet_1(void)
 {
-   printf("sizeof(ETH_PACKET): %u\n", sizeof(ETH_PACKET));
    ETH_PACKET *packet = pvPortMalloc(sizeof(ETH_PACKET));
 
    test_create_packet(packet);
    enc28j60_test_send_packet((const uint8_t *)packet, sizeof(ETH_PACKET));
+
+   vPortFree(packet);
+}
+
+/////////////////////////////////////////////////////////////
+
+static void test_enc28j60_test_send_packet_n(void)
+{
+   char input_buf[16];
+   unsigned transfers;
+  
+   printf("Enter transfers [0-N]: ");
+   fflush(stdout);
+
+   fgets(input_buf, 16, stdin);
+   sscanf(input_buf, "%u", &transfers);
+
+   ETH_PACKET *packet = pvPortMalloc(sizeof(ETH_PACKET));
+
+   test_create_packet(packet);
+   for (unsigned i=0; i < transfers; i++)
+   {
+      packet->udp_dgram.udp_data = htonl(0xabcd0000 + i);
+      enc28j60_test_send_packet((const uint8_t *)packet, sizeof(ETH_PACKET));
+   }
 
    vPortFree(packet);
 }
@@ -122,7 +146,8 @@ static void print_enc28j60_menu(void)
   printf("--          TEST MENU ENC28J60         --\n");
   printf("-----------------------------------------\n");
   printf(" 1. init\n");
-  printf(" 2. (test)send packet\n");
+  printf(" 2. (test)send packet x1\n");
+  printf(" 3. (test)send packet xN\n");
   printf("\n");
 }
 
@@ -151,7 +176,10 @@ static void task_enc28j60(void *args)
             test_enc28j60_init();
             break;
          case 2:
-            test_enc28j60_test_send_packet();
+            test_enc28j60_test_send_packet_1();
+            break;
+         case 3:
+            test_enc28j60_test_send_packet_n();
             break;
          default:
             printf("*** Illegal choice : %s\n", input_buf);
