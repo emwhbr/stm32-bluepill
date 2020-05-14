@@ -212,3 +212,23 @@ int main(void)
 
    return 0;
 }
+
+/////////////////////////////////////////////////////////////
+
+#if (configASSERT_DEFINED == 1)
+
+void vAssertCalled(unsigned long ulLine, const char * const pcFileName)
+{
+   taskENTER_CRITICAL();
+   {
+      printf("*** ASSERT => %s:%lu\n", pcFileName, ulLine);
+      fflush(stdout);
+   }
+   taskEXIT_CRITICAL();
+
+   while(1)
+   {
+      ;
+   }
+}
+#endif // configASSERT_DEFINED

@@ -44,6 +44,7 @@
 
 #define ENC28J60_DBG_HI  gpio_set(ENC28J60_GPIO_PORT,   ENC28J60_GPIO_PIN_DBG)
 #define ENC28J60_DBG_LO  gpio_clear(ENC28J60_GPIO_PORT, ENC28J60_GPIO_PIN_DBG)
+#define ENC28J60_DBG_TG  gpio_toggle(ENC28J60_GPIO_PORT, ENC28J60_GPIO_PIN_DBG)
 
 // SPI support
 #define ENC28J60_SPI            SPI2
@@ -79,9 +80,9 @@ static volatile SemaphoreHandle_t xSpiDmaDoneSem = NULL;
 #define ENC28J60_SPI_CMD_SRC  (0b11111111) // soft system reset
 
 // receive and transmit buffers
-#define ENC28J60_RX_BUFFER_START  0x0000  // RX : 6KB
+#define ENC28J60_RX_BUFFER_BEGIN  0x0000  // RX : 6KB
 #define ENC28J60_RX_BUFFER_END    0x17FF
-#define ENC28J60_TX_BUFFER_START  0x1800  // TX : 2KB
+#define ENC28J60_TX_BUFFER_BEGIN  0x1800  // TX : 2KB
 #define ENC28J60_TX_BUFFER_END    0x1FFF
 
 static volatile SemaphoreHandle_t xTxDoneSem = NULL;
@@ -165,6 +166,7 @@ static void enc28j60_enable_ext_int(void)
 void exti15_10_isr(void)
 {
    uint8_t tx_done = 0;
+   uint8_t pktcnt = 0;
 
    if (exti_get_flag_status(ENC28J60_GPIO_PIN_INT_EXTI) == ENC28J60_GPIO_PIN_INT_EXTI)
    {
@@ -195,6 +197,29 @@ void exti15_10_isr(void)
 
          // signal transmission done
          tx_done = 1;
+      }
+
+      ////////////////////////////////////////
+      // check if packet received
+      ////////////////////////////////////////
+      pktcnt = enc28j60_read_ctrl_register(ENC28J60_EPKTCNT);
+      if ( (status & ENC28J60_EIR_PKTIF) || pktcnt )
+      {
+         enc28j60_bfs_eth_register(ENC28J60_ECON2, ENC28J60_ECON2_PKTDEC);
+         ENC28J60_DBG_LO;
+         dwt_delay(1);
+         ENC28J60_DBG_HI;
+      }
+
+      ////////////////////////////////////////
+      // check if packet received
+      ////////////////////////////////////////
+      if (status & ENC28J60_EIR_RXERIF)
+      {
+          enc28j60_bfc_eth_register(ENC28J60_EIR, ENC28J60_EIR_RXERIF);
+          ENC28J60_DBG_LO;
+          dwt_delay(10);
+          ENC28J60_DBG_HI;
       }
 
       ////////////////////////////////////////
@@ -379,6 +404,8 @@ static void enc28j60_bfs_eth_register(uint16_t addr, uint8_t mask)
 {
    // Note!
    // This function is only applicable on ETH registers.
+   configASSERT( (ENC28J60_CTRL_REG(addr) == ENC28J60_CTRL_REG_ETH) ||
+                 (ENC28J60_CTRL_REG(addr) == (ENC28J60_CTRL_REG_ETH | ENC28J60_CTRL_REG_ALL)) );
 
    ENC28J60_SPI_NSS_LO;
 
@@ -394,6 +421,8 @@ static void enc28j60_bfc_eth_register(uint16_t addr, uint8_t mask)
 {
    // Note!
    // This function is only applicable on ETH registers.
+   configASSERT( (ENC28J60_CTRL_REG(addr) == ENC28J60_CTRL_REG_ETH) ||
+                 (ENC28J60_CTRL_REG(addr) == (ENC28J60_CTRL_REG_ETH | ENC28J60_CTRL_REG_ALL)) );
 
    ENC28J60_SPI_NSS_LO;
 
@@ -556,11 +585,37 @@ void enc28j60_init(void)
       return;
    }
 
+   uint8_t revid = enc28j60_read_ctrl_register(ENC28J60_EREVID);
+   if (revid == 0x06)
+   {
+      revid = enc28j60_read_ctrl_register(ENC28J60_EREVID);
+   }
+
+   // set local MAC address
+   enc28j60_write_ctrl_register(ENC28J60_MAADR1, 0x00);
+   enc28j60_write_ctrl_register(ENC28J60_MAADR2, 0x13);
+   enc28j60_write_ctrl_register(ENC28J60_MAADR3, 0x3b);
+   enc28j60_write_ctrl_register(ENC28J60_MAADR4, 0x00);
+   enc28j60_write_ctrl_register(ENC28J60_MAADR5, 0x00);
+   enc28j60_write_ctrl_register(ENC28J60_MAADR6, 0x01);
+
    // define the receive buffer, the transmit buffer is considered to be the rest
-   enc28j60_write_ctrl_register(ENC28J60_ERXSTL, LSB(ENC28J60_RX_BUFFER_START));
-   enc28j60_write_ctrl_register(ENC28J60_ERXSTH, MSB(ENC28J60_RX_BUFFER_START));
+   enc28j60_write_ctrl_register(ENC28J60_ERXSTL, LSB(ENC28J60_RX_BUFFER_BEGIN));
+   enc28j60_write_ctrl_register(ENC28J60_ERXSTH, MSB(ENC28J60_RX_BUFFER_BEGIN));
    enc28j60_write_ctrl_register(ENC28J60_ERXNDL, LSB(ENC28J60_RX_BUFFER_END));
    enc28j60_write_ctrl_register(ENC28J60_ERXNDH, MSB(ENC28J60_RX_BUFFER_END));
+
+   // define a location within the FIFO where the hardware is forbidden to write to
+   enc28j60_write_ctrl_register(ENC28J60_ERXRDPTL, LSB(ENC28J60_RX_BUFFER_END));
+   enc28j60_write_ctrl_register(ENC28J60_ERXRDPTH, MSB(ENC28J60_RX_BUFFER_END));
+
+   // configure receive filter (Promiscuous mode)
+   //enc28j60_write_ctrl_register(ENC28J60_ERXFCON, NC28J60_ERXFCON_CRCEN);
+   enc28j60_write_ctrl_register(ENC28J60_ERXFCON, 0x00);
+
+   // enable MAC to receive packets
+   enc28j60_write_ctrl_register(ENC28J60_MACON1,
+      ENC28J60_MACON1_TXPAUS | ENC28J60_MACON1_RXPAUS | ENC28J60_MACON1_MARXEN);
 
    // MAC => Half-Duplex mode
    // - enable automatic padding to at least 64 bytes
@@ -601,13 +656,21 @@ void enc28j60_init(void)
                                ENC28J60_PHLCON_LFRQ(0)       | \
                                ENC28J60_PHLCON_STRCH);
 
+   // clear interrupts
+   enc28j60_write_ctrl_register(ENC28J60_EIR, 0x00);
+
+   // enable interrupts from chip
+   enc28j60_write_ctrl_register(ENC28J60_EIE,
+      ENC28J60_EIE_INTIE  |
+      ENC28J60_EIE_TXIE   | ENC28J60_EIE_TXERIE |
+      ENC28J60_EIE_LINKIE |
+      ENC28J60_EIE_PKTIE  | ENC28J60_EIE_RXERIE);
+
    // enable interrupts from PHY
    enc28j60_write_phy_register(ENC28J60_PHIE, ENC28J60_PHIE_PLNKIE | ENC28J60_PHIE_PGEIE);
 
-   // enable interrupts from chip
-   enc28j60_write_ctrl_register(ENC28J60_EIR, 0x00);
-   enc28j60_write_ctrl_register(ENC28J60_EIE,
-      ENC28J60_EIE_INTIE | ENC28J60_EIE_TXIE | ENC28J60_EIE_TXERIE | ENC28J60_EIE_LINKIE);
+   // enable receive packets
+   enc28j60_bfs_eth_register(ENC28J60_ECON1, ENC28J60_ECON1_RXEN);
 
    // enable external interrupts
    enc28j60_enable_ext_int();
@@ -618,17 +681,17 @@ void enc28j60_init(void)
 void enc28j60_test_send_packet(const uint8_t *buf, size_t len)
 {
    // point to the first byte to transmit
-   enc28j60_write_ctrl_register(ENC28J60_EWRPTL, LSB(ENC28J60_TX_BUFFER_START));
-   enc28j60_write_ctrl_register(ENC28J60_EWRPTH, MSB(ENC28J60_TX_BUFFER_START));
+   enc28j60_write_ctrl_register(ENC28J60_EWRPTL, LSB(ENC28J60_TX_BUFFER_BEGIN));
+   enc28j60_write_ctrl_register(ENC28J60_EWRPTH, MSB(ENC28J60_TX_BUFFER_BEGIN));
 
    // copy data to transmit buffer
    enc28j60_write_eth_buffer(buf, len);
 
    // transmit buffer location
-   enc28j60_write_ctrl_register(ENC28J60_ETXSTL, LSB(ENC28J60_TX_BUFFER_START));
-   enc28j60_write_ctrl_register(ENC28J60_ETXSTH, MSB(ENC28J60_TX_BUFFER_START));
-   enc28j60_write_ctrl_register(ENC28J60_ETXNDL, LSB(ENC28J60_TX_BUFFER_START + len));
-   enc28j60_write_ctrl_register(ENC28J60_ETXNDH, MSB(ENC28J60_TX_BUFFER_START + len));
+   enc28j60_write_ctrl_register(ENC28J60_ETXSTL, LSB(ENC28J60_TX_BUFFER_BEGIN));
+   enc28j60_write_ctrl_register(ENC28J60_ETXSTH, MSB(ENC28J60_TX_BUFFER_BEGIN));
+   enc28j60_write_ctrl_register(ENC28J60_ETXNDL, LSB(ENC28J60_TX_BUFFER_BEGIN + len));
+   enc28j60_write_ctrl_register(ENC28J60_ETXNDH, MSB(ENC28J60_TX_BUFFER_BEGIN + len));
 
    // start transmission
    enc28j60_bfs_eth_register(ENC28J60_ECON1, ENC28J60_ECON1_TXRTS);

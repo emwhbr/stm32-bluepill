@@ -134,14 +134,20 @@
 #define ENC28J60_ESTAT_CLKRDY   (1 << 0)
 
 // control register ECON1, Ethernet Control Register 1
- #define ENC28J60_ECON1_TXRST   (1 << 7)
- #define ENC28J60_ECON1_RXRST   (1 << 6)
- #define ENC28J60_ECON1_DMAST   (1 << 5)
- #define ENC28J60_ECON1_CSUMEN  (1 << 4)
- #define ENC28J60_ECON1_TXRTS   (1 << 3)
- #define ENC28J60_ECON1_RXEN    (1 << 2)
- #define ENC28J60_ECON1_BSEL1   (1 << 1)
- #define ENC28J60_ECON1_BSEL0   (1 << 0)
+#define ENC28J60_ECON1_TXRST    (1 << 7)
+#define ENC28J60_ECON1_RXRST    (1 << 6)
+#define ENC28J60_ECON1_DMAST    (1 << 5)
+#define ENC28J60_ECON1_CSUMEN   (1 << 4)
+#define ENC28J60_ECON1_TXRTS    (1 << 3)
+#define ENC28J60_ECON1_RXEN     (1 << 2)
+#define ENC28J60_ECON1_BSEL1    (1 << 1)
+#define ENC28J60_ECON1_BSEL0    (1 << 0)
+
+// control register ECON2, Ethernet Control Register 2
+#define ENC28J60_ECON2_AUTOINC  (1 << 7)
+#define ENC28J60_ECON2_PKTDEC   (1 << 6)
+#define ENC28J60_ECON2_PWRSV    (1 << 5)
+#define ENC28J60_ECON2_VRPS     (1 << 3)
 
 // control register EIE, Ethernet Interupt Enable Register
 #define ENC28J60_EIE_INTIE      (1 << 7)
@@ -162,6 +168,16 @@
 #define ENC28J60_EIR_TXERIF     (1 << 1)
 #define ENC28J60_EIR_RXERIF     (1 << 0)
 
+// control register ERXFCON, Ehterner Receive Filter Control Register
+#define NC28J60_ERXFCON_UCEN    (1 << 7)
+#define NC28J60_ERXFCON_ANDOR   (1 << 6)
+#define NC28J60_ERXFCON_CRCEN   (1 << 5)
+#define NC28J60_ERXFCON_PMEN    (1 << 4)
+#define NC28J60_ERXFCON_MPEN    (1 << 3)
+#define NC28J60_ERXFCON_HTEN    (1 << 2)
+#define NC28J60_ERXFCON_MCEN    (1 << 1)
+#define NC28J60_ERXFCON_BCEN    (1 << 0)
+
 // control register MICMD, MII Command Register
 #define ENC28J60_MICMD_MIISCAN  (1 << 1)
 #define ENC28J60_MICMD_MIIRD    (1 << 0)
@@ -170,6 +186,12 @@
 #define ENC28J60_MISTAT_NVALID  (1 << 2)
 #define ENC28J60_MISTAT_SCAN    (1 << 1)
 #define ENC28J60_MISTAT_BUSY    (1 << 0)
+
+// control register MACON1, MAC Control Register 1
+#define ENC28J60_MACON1_TXPAUS   (1 << 3)
+#define ENC28J60_MACON1_RXPAUS   (1 << 2)
+#define ENC28J60_MACON1_PASSALL  (1 << 1)
+#define ENC28J60_MACON1_MARXEN   (1 << 0)
 
 // control register MACON3, MAC Control Register 3
 #define ENC28J60_MACON3_PADCFG2  (1 << 7)
