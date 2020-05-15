@@ -86,15 +86,17 @@ static volatile SemaphoreHandle_t xSpiDmaDoneSem = NULL;
 #define ENC28J60_TX_BUFFER_END    0x1FFF
 
 static volatile SemaphoreHandle_t xTxDoneSem = NULL;
+static volatile SemaphoreHandle_t xRxDoneSem = NULL;
 
 // helper macros
-#define ENC28J60_ETH_MAX_FRAME_SIZE  1518
-
 #define MSB(value) (((value) & 0xff00) >> 8)
 #define LSB(value)  ((value) & 0x00ff)
 
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
 // global variables
 static uint16_t g_current_bank = ENC28J60_BANK0;
+static uint16_t g_next_packet = ENC28J60_RX_BUFFER_BEGIN;
 
 // internal functions
 static void enc28j60_gpio_init(void);
@@ -115,6 +117,7 @@ static uint16_t enc28j60_read_phy_register(uint8_t addr);
 static void enc28j60_write_phy_register(uint8_t addr, uint16_t data);
 
 static void enc28j60_write_eth_buffer(const uint8_t *buf, size_t len);
+static void enc28j60_read_eth_buffer(uint8_t *buf, size_t len);
 
 /////////////////////////////////////////////////////////////
 
@@ -155,6 +158,12 @@ static void enc28j60_enable_ext_int(void)
       xTxDoneSem = xSemaphoreCreateBinary();
    }
 
+   // create sempahore used for a received package
+   if (xRxDoneSem == NULL)
+   {
+      xRxDoneSem = xSemaphoreCreateBinary();
+   }
+
    nvic_set_priority(ENC28J60_GPIO_PIN_INT_IRQ, 0);
    nvic_enable_irq(ENC28J60_GPIO_PIN_INT_IRQ);
 }
@@ -166,6 +175,7 @@ static void enc28j60_enable_ext_int(void)
 void exti15_10_isr(void)
 {
    uint8_t tx_done = 0;
+   uint8_t rx_done = 0;
    uint8_t pktcnt = 0;
 
    if (exti_get_flag_status(ENC28J60_GPIO_PIN_INT_EXTI) == ENC28J60_GPIO_PIN_INT_EXTI)
@@ -205,21 +215,20 @@ void exti15_10_isr(void)
       pktcnt = enc28j60_read_ctrl_register(ENC28J60_EPKTCNT);
       if ( (status & ENC28J60_EIR_PKTIF) || pktcnt )
       {
-         enc28j60_bfs_eth_register(ENC28J60_ECON2, ENC28J60_ECON2_PKTDEC);
          ENC28J60_DBG_LO;
-         dwt_delay(1);
-         ENC28J60_DBG_HI;
+         // signal packet received
+         rx_done = 1;
+
+         // disable receive interrupt (will be re-enabled when packet is handled)
+         enc28j60_bfc_eth_register(ENC28J60_EIE, ENC28J60_EIE_PKTIE);
       }
 
       ////////////////////////////////////////
-      // check if packet received
+      // check if packet was dropped
       ////////////////////////////////////////
       if (status & ENC28J60_EIR_RXERIF)
       {
-          enc28j60_bfc_eth_register(ENC28J60_EIR, ENC28J60_EIR_RXERIF);
-          ENC28J60_DBG_LO;
-          dwt_delay(10);
-          ENC28J60_DBG_HI;
+         enc28j60_bfc_eth_register(ENC28J60_EIR, ENC28J60_EIR_RXERIF);
       }
 
       ////////////////////////////////////////
@@ -233,25 +242,27 @@ void exti15_10_isr(void)
          if ( (enc28j60_read_phy_register(ENC28J60_PHSTAT2) & ENC28J60_PHSTAT2_LSTAT) == ENC28J60_PHSTAT2_LSTAT )
          {
             // link up
-            ENC28J60_DBG_HI;
          }
          else
          {
             //link down
-            ENC28J60_DBG_LO;
          }
       }
 
       // enable interrupts from chip
       enc28j60_bfs_eth_register(ENC28J60_EIE, ENC28J60_EIE_INTIE);
-   }
 
-   if (tx_done)
-   {
-      tx_done = 0;
       BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-      xSemaphoreGiveFromISR(xTxDoneSem, &xHigherPriorityTaskWoken);
+      if (tx_done)
+      {
+         xSemaphoreGiveFromISR(xTxDoneSem, &xHigherPriorityTaskWoken);
+      }
+      if (rx_done)
+      {
+         xSemaphoreGiveFromISR(xRxDoneSem, &xHigherPriorityTaskWoken);
+      }
       portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+
    }
 }
 
@@ -560,6 +571,22 @@ static void enc28j60_write_eth_buffer(const uint8_t *buf, size_t len)
 
 /////////////////////////////////////////////////////////////
 
+static void enc28j60_read_eth_buffer(uint8_t *buf, size_t len)
+{
+   ENC28J60_SPI_NSS_LO;
+
+   enc28j60_spi_xfer(ENC28J60_SPI_CMD_RBM);
+
+   for (size_t i = 0; i < len; i++)
+   {
+      buf[i] = enc28j60_spi_xfer(0x00);
+   }
+
+   ENC28J60_SPI_NSS_HI;
+}
+
+/////////////////////////////////////////////////////////////
+
 void enc28j60_init(void)
 {
    // initialize hardware
@@ -698,4 +725,50 @@ void enc28j60_test_send_packet(const uint8_t *buf, size_t len)
 
    // wait for transmission completed
    xSemaphoreTake(xTxDoneSem, portMAX_DELAY);
+}
+
+/////////////////////////////////////////////////////////////
+
+void enc28j60_test_recv_packet(uint8_t *buf, size_t len, size_t *actual)
+{
+   // wait for packet received
+   xSemaphoreTake(xRxDoneSem, portMAX_DELAY);
+
+    ENC28J60_DBG_HI;
+
+   // read from the start of the received packet
+   enc28j60_write_ctrl_register(ENC28J60_ERDPTL, LSB(g_next_packet));
+   enc28j60_write_ctrl_register(ENC28J60_ERDPTH, MSB(g_next_packet));
+
+   // (two bytes) => address of the next packet
+   enc28j60_read_eth_buffer((uint8_t *)&g_next_packet, sizeof(uint16_t));
+
+   // (two bytes) => length of the received frame in bytes
+   enc28j60_read_eth_buffer((uint8_t *)actual, sizeof(uint16_t));
+
+   // (two bytes) => receive status vector
+   uint16_t status = 0;
+   enc28j60_read_eth_buffer((uint8_t *)&status, sizeof(uint16_t));
+
+   // limit the number of bytes to read form the Ethernet Frame
+   *actual = MIN(*actual, len);
+   enc28j60_read_eth_buffer(buf, *actual);
+
+   // update the ERXRDPT pointer according to errata
+   if (g_next_packet == ENC28J60_RX_BUFFER_BEGIN)
+   {
+      enc28j60_write_ctrl_register(ENC28J60_ERXRDPTL, LSB(ENC28J60_RX_BUFFER_END));
+      enc28j60_write_ctrl_register(ENC28J60_ERXRDPTH, MSB(ENC28J60_RX_BUFFER_END));
+   }
+   else
+   {
+      enc28j60_write_ctrl_register(ENC28J60_ERXRDPTL, LSB(g_next_packet - 1));
+      enc28j60_write_ctrl_register(ENC28J60_ERXRDPTH, MSB(g_next_packet - 1));
+   }
+
+   // decrement the packet counter
+   enc28j60_bfs_eth_register(ENC28J60_ECON2, ENC28J60_ECON2_PKTDEC);
+
+   // enable receive interrupt again
+   enc28j60_bfs_eth_register(ENC28J60_EIE, ENC28J60_EIE_PKTIE);
 }
