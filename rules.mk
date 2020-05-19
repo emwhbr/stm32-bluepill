@@ -152,6 +152,12 @@ reset:
 	-f target/$(OOCD_TARGET) -f ${OOCD_PROC} \
 	-c "target_reset"
 
+erase:
+	@printf "  ERASE FLASH TARGET\n"
+	$(Q)$(OOCD) -f interface/$(OOCD_INTERFACE) -c "transport select swd" \
+	-f target/$(OOCD_TARGET) -f ${OOCD_PROC} \
+	-c "target_erase_flash"
+
 clean:
 	@printf "  CLEAN\t$(PROJECT)\n"
 	$(Q)rm -rf $(BUILD_DIR) $(GENERATED_BINS)

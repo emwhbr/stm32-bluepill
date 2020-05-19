@@ -14,10 +14,6 @@
 
 /////////////////////////////////////////////////////////////
 
-static void hex_dump(char *desc, void *addr, int len);
-
-/////////////////////////////////////////////////////////////
-
 static void init_clock(void)
 {
    rcc_clock_setup_in_hse_8mhz_out_72mhz();
@@ -143,29 +139,6 @@ static void test_enc28j60_test_send_packet_n(void)
 
 /////////////////////////////////////////////////////////////
 
-static void test_enc28j60_test_recv_packet_1(void)
-{
-   size_t actual = 0;
-   uint8_t *packet = pvPortMalloc(ENC28J60_ETH_MAX_FRAME_SIZE);
-
-   enc28j60_test_recv_packet(packet, ENC28J60_ETH_MAX_FRAME_SIZE, &actual);
-
-   printf("rx bytes: %u\n", actual);
-   fflush(stdout);
-   hex_dump("RX-DATA", packet, actual);
-   /*
-   for (size_t i=0; i < actual; i++)
-   {
-      printf("packet[%u]=0x%x\n", i, packet[i]);
-      fflush(stdout);
-   }
-   */
-
-   vPortFree(packet);
-}
-
-/////////////////////////////////////////////////////////////
-
 static void print_enc28j60_menu(void)
 {
   printf("\n");
@@ -175,7 +148,6 @@ static void print_enc28j60_menu(void)
   printf(" 1. init\n");
   printf(" 2. (test)send packet x1\n");
   printf(" 3. (test)send packet xN\n");
-  printf(" 4. (test)recv packet x1\n");
   printf("\n");
 }
 
@@ -209,9 +181,6 @@ static void task_enc28j60(void *args)
          case 3:
             test_enc28j60_test_send_packet_n();
             break;
-         case 4:
-            test_enc28j60_test_recv_packet_1();
-            break;
          default:
             printf("*** Illegal choice : %s\n", input_buf);
       }
@@ -230,8 +199,8 @@ int main(void)
 
    printf("\nenc28j60_freertos - started\n");
 
-   xTaskCreate(task_led,      "LED",      100, NULL, configMAX_PRIORITIES-1, NULL);
-   xTaskCreate(task_enc28j60, "ENC28J60", 250, NULL, configMAX_PRIORITIES-2, NULL);
+   xTaskCreate(task_led,      "LED",      100, NULL, configMAX_PRIORITIES-2, NULL);
+   xTaskCreate(task_enc28j60, "ENC28J60", 250, NULL, configMAX_PRIORITIES-3, NULL);
 
    printf("heap-free-0: %u\n", xPortGetFreeHeapSize());
 
@@ -263,65 +232,3 @@ void vAssertCalled(unsigned long ulLine, const char * const pcFileName)
    }
 }
 #endif // configASSERT_DEFINED
-
-/////////////////////////////////////////////////////////////
-
-static void hex_dump(char *desc, void *addr, int len)
-{
-   int i;
-   unsigned char buff[17];
-   unsigned char *pc = (unsigned char*)addr;
-
-   // output description
-   if (desc != NULL)
-   {
-      printf ("%s:\n", desc);
-      fflush(stdout);
-   }
-
-   // process every byte in the data
-   for (i = 0; i < len; i++)
-   {
-      // multiple of 16 means new line (with line offset).
-
-      if ((i % 16) == 0)
-      {
-         // Just don't print ASCII for the zeroth line
-         if (i != 0)
-         {
-            printf("  %s\n", buff);
-            fflush(stdout);
-         }
-
-         // output the offset.
-         printf("  %04x ", i);
-         fflush(stdout);
-      }
-
-      // now the hex code for the specific character
-      printf(" %02x", pc[i]);
-      fflush(stdout);
-
-      // and store a printable ASCII character for later
-      if ((pc[i] < 0x20) || (pc[i] > 0x7e))
-      {
-         buff[i % 16] = '.';
-      } else {
-         buff[i % 16] = pc[i];
-      }
-
-      buff[(i % 16) + 1] = '\0';
-   }
-
-   // pad out last line if not exactly 16 characters
-   while ((i % 16) != 0)
-   {
-      printf("   ");
-      fflush(stdout);
-      i++;
-   }
-
-   // and print the final ASCII bit.
-   printf("  %s\n", buff);
-   fflush(stdout);
-}
