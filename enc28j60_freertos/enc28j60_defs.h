@@ -169,14 +169,14 @@
 #define ENC28J60_EIR_RXERIF     (1 << 0)
 
 // control register ERXFCON, Ehterner Receive Filter Control Register
-#define NC28J60_ERXFCON_UCEN    (1 << 7)
-#define NC28J60_ERXFCON_ANDOR   (1 << 6)
-#define NC28J60_ERXFCON_CRCEN   (1 << 5)
-#define NC28J60_ERXFCON_PMEN    (1 << 4)
-#define NC28J60_ERXFCON_MPEN    (1 << 3)
-#define NC28J60_ERXFCON_HTEN    (1 << 2)
-#define NC28J60_ERXFCON_MCEN    (1 << 1)
-#define NC28J60_ERXFCON_BCEN    (1 << 0)
+#define ENC28J60_ERXFCON_UCEN   (1 << 7)
+#define ENC28J60_ERXFCON_ANDOR  (1 << 6)
+#define ENC28J60_ERXFCON_CRCEN  (1 << 5)
+#define ENC28J60_ERXFCON_PMEN   (1 << 4)
+#define ENC28J60_ERXFCON_MPEN   (1 << 3)
+#define ENC28J60_ERXFCON_HTEN   (1 << 2)
+#define ENC28J60_ERXFCON_MCEN   (1 << 1)
+#define ENC28J60_ERXFCON_BCEN   (1 << 0)
 
 // control register MICMD, MII Command Register
 #define ENC28J60_MICMD_MIISCAN  (1 << 1)

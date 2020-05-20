@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-void enc28j60_init(void);
+int enc28j60_init(void);
 
 void enc28j60_test_send_packet(const uint8_t *buf, size_t len);
 

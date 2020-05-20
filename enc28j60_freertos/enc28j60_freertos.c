@@ -50,7 +50,12 @@ static void task_led(void *args)
 
 static void test_enc28j60_init(void)
 {
-   enc28j60_init();
+   int rc = enc28j60_init();
+   if (rc)
+   {
+      printf("*** init failed, rc = %d\n", rc);
+      fflush(stdout);
+   }
 }
 
 /////////////////////////////////////////////////////////////
