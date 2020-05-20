@@ -7,6 +7,7 @@ PROJECTS += stdio_freertos
 PROJECTS += ssd1306_freertos
 PROJECTS += littlevgl_basic
 PROJECTS += enc28j60_freertos
+PROJECTS += alive_freertosip
 
 .PHONY = libopencm3
 

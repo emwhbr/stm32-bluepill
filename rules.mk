@@ -6,6 +6,9 @@ include $(OPENCM3_DIR)/mk/genlink-config.mk
 FREERTOS_DIR = ../FreeRTOS
 VPATH += $(FREERTOS_DIR)
 
+FREERTOS_PLUS_TCP_DIR = ../FreeRTOS-Plus-TCP
+VPATH += $(FREERTOS_PLUS_TCP_DIR)
+
 SHARED_DIR = ../shared
 VPATH += $(SHARED_DIR)
 
@@ -36,10 +39,12 @@ OOCD	= openocd
 
 OPENCM3_INC = $(OPENCM3_DIR)/include
 FREERTOS_INC = $(FREERTOS_DIR)/include
+FREERTOS_PLUS_TCP_INC = $(FREERTOS_PLUS_TCP_DIR)/include
 
 # Inclusion of library header files
 INCLUDES += $(patsubst %,-I%, . $(OPENCM3_INC)  )
 INCLUDES += $(patsubst %,-I%, . $(FREERTOS_INC) )
+INCLUDES += $(patsubst %,-I%, . $(FREERTOS_PLUS_TCP_INC) )
 INCLUDES += $(patsubst %,-I%, . $(SHARED_DIR)   )
 INCLUDES += $(patsubst %,-I%, . $(LVGL_DIR) )
 
@@ -106,6 +111,18 @@ flash: $(PROJECT).flash
 # We need to disable warnings for some source code in LittleVGL
 $(BUILD_DIR)/lv_hal_disp.o    : TGT_CFLAGS += -Wno-unused-parameter
 $(BUILD_DIR)/lv_img_decoder.o : TGT_CFLAGS += -Wno-unused-parameter
+
+# We need to disable warnings for some source code in FreeRTOS+TCP
+$(BUILD_DIR)/BufferAllocation_2.o     : TGT_CFLAGS += -Wno-redundant-decls
+$(BUILD_DIR)/FreeRTOS_ARP.o           : TGT_CFLAGS += -Wno-redundant-decls -Wno-strict-prototypes
+$(BUILD_DIR)/FreeRTOS_DHCP.o          : TGT_CFLAGS += -Wno-redundant-decls -Wno-sign-compare
+$(BUILD_DIR)/FreeRTOS_DNS.o           : TGT_CFLAGS += -Wno-redundant-decls -Wno-strict-prototypes -Wno-missing-prototypes
+$(BUILD_DIR)/FreeRTOS_IP.o            : TGT_CFLAGS += -Wno-redundant-decls -Wno-strict-prototypes -Wno-address-of-packed-member
+$(BUILD_DIR)/FreeRTOS_Sockets.o       : TGT_CFLAGS += -Wno-redundant-decls -Wno-sign-compare -Wno-strict-prototypes
+$(BUILD_DIR)/FreeRTOS_Stream_Buffer.o : TGT_CFLAGS += -Wno-redundant-decls
+$(BUILD_DIR)/FreeRTOS_TCP_IP.o        : TGT_CFLAGS += -Wno-redundant-decls -Wno-unused-function
+$(BUILD_DIR)/FreeRTOS_TCP_WIN.o       : TGT_CFLAGS += -Wno-redundant-decls
+$(BUILD_DIR)/FreeRTOS_UDP_IP.o        : TGT_CFLAGS += -Wno-redundant-decls -Wno-strict-prototypes
 
 # Need a special rule to have a bin dir
 $(BUILD_DIR)/%.o: %.c
