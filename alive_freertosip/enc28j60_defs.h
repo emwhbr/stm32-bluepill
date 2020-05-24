@@ -278,4 +278,22 @@
 #define ENC28J60_PHLCON_LBCFG(x)  ((x) << 4)
 #define ENC28J60_PHLCON_LFRQ(x)   ((x) << 2)
 
+//////////////////////////////////////////////////////////////////////////
+//                   RECEIVE STATUS VECTOR (RSV)
+//////////////////////////////////////////////////////////////////////////
+
+ #define ENC28J60_RSV_VLAN_TYPE            0x4000
+ #define ENC28J60_RSV_UNKNOWN_OPCODE       0x2000
+ #define ENC28J60_RSV_PAUSE_CONTROL_FRAME  0x1000
+ #define ENC28J60_RSV_CONTROL_FRAME        0x0800
+ #define ENC28J60_RSV_DRIBBLE_NIBBLE       0x0400
+ #define ENC28J60_RSV_BROADCAST_PACKET     0x0200
+ #define ENC28J60_RSV_MULTICAST_PACKET     0x0100
+ #define ENC28J60_RSV_RECEIVED_OK          0x0080
+ #define ENC28J60_RSV_LENGTH_OUT_OF_RANGE  0x0040
+ #define ENC28J60_RSV_LENGTH_CHECK_ERROR   0x0020
+ #define ENC28J60_RSV_CRC_ERROR            0x0010
+ #define ENC28J60_RSV_CARRIER_EVENT        0x0004
+ #define ENC28J60_RSV_DROP_EVENT           0x0001
+
 #endif

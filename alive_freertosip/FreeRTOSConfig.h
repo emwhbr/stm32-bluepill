@@ -61,7 +61,7 @@
 #define configSUPPORT_STATIC_ALLOCATION   0
 #define configSUPPORT_DYNAMIC_ALLOCATION  1
 #define configMINIMAL_STACK_SIZE          ( ( unsigned short ) 128 )
-#define configTOTAL_HEAP_SIZE             ( ( size_t ) ( 12 * 1024 ) )
+#define configTOTAL_HEAP_SIZE             ( ( size_t ) ( 16 * 1024 ) )
 
 /* Run time and task stats gathering related definitions. */
 #define configGENERATE_RUN_TIME_STATS           0

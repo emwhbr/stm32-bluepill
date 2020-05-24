@@ -11,10 +11,12 @@
 
 /////////////////////////////////////////////////////////////
 
-extern uint32_t ulApplicationGetNextSequenceNumber(uint32_t ulSourceAddress,
-                                                   uint16_t usSourcePort,
-                                                   uint32_t ulDestinationAddress,
-                                                   uint16_t usDestinationPort);
+uint32_t ulApplicationGetNextSequenceNumber(uint32_t ulSourceAddress,
+                                            uint16_t usSourcePort,
+                                            uint32_t ulDestinationAddress,
+                                            uint16_t usDestinationPort);
+
+/////////////////////////////////////////////////////////////
 
 // Use by the pseudo random number generator
 static UBaseType_t ulNextRand;
@@ -31,20 +33,20 @@ uint32_t ulApplicationGetNextSequenceNumber(uint32_t ulSourceAddress,
    ( void ) ulDestinationAddress;
    ( void ) usDestinationPort;
 
-   return uxRand();
+   return uxApplicationRand();
 }
 
 /////////////////////////////////////////////////////////////
 
 BaseType_t xApplicationGetRandomNumber(uint32_t* pulNumber)
 {
-   *(pulNumber) = uxRand();
+   *(pulNumber) = uxApplicationRand();
    return pdTRUE;
 }
 
 /////////////////////////////////////////////////////////////
 
-UBaseType_t uxRand(void)
+UBaseType_t uxApplicationRand(void)
 {
 const uint32_t ulMultiplier = 0x015a4e35UL, ulIncrement = 1UL;
 
@@ -64,7 +66,7 @@ void vApplicationIPNetworkEventHook(eIPCallbackEvent_t eNetworkEvent)
    uint32_t ulIPAddress, ulNetMask, ulGatewayAddress, ulDNSServerAddress;
    char cBuffer[16];
 
-   printf("\nEV:%u\n", eNetworkEvent);
+   printf("\nEV:%s\n", eNetworkEvent == eNetworkUp ? "UP" : "DOWN");
 
    if (eNetworkEvent == eNetworkUp)
    {
@@ -85,10 +87,34 @@ void vApplicationIPNetworkEventHook(eIPCallbackEvent_t eNetworkEvent)
 
 /////////////////////////////////////////////////////////////
 
-void vLoggingPrintf(const char *pcFormat, ...)
+void vApplicationPingReplyHook(ePingReplyStatus_t eStatus,
+                               uint16_t usIdentifier)
 {
+   if (eStatus == eSuccess)
+   {
+      printf("PING [OK], id=%u\n", usIdentifier);
+   }
+   else
+   {
+      printf("PING [FAILED]\n");
+   }
+   fflush(stdout);
+}
+
+/////////////////////////////////////////////////////////////
+
+void vApplicationLoggingPrintf(const char *pcFormat, ...)
+{
+   char str[200];
+
    va_list args;
    va_start(args, pcFormat);
-   printf(pcFormat, args);
+
+   if (0 < vsprintf(str, pcFormat, args))
+   {
+      printf(str);
+   }
+
    va_end(args);
+   fflush(stdout);
 }

@@ -10,23 +10,31 @@
 #include <FreeRTOS_IP.h>
 #include <FreeRTOS_Sockets.h>
 
+#include "application_freertos_prio.h"
 #include "uart.h"
 #include "dwt_delay.h"
-#include "enc28j60.h"
 
 /////////////////////////////////////////////////////////////
 
-// Define the network addressing.  These parameters will be used if either
-// ipconfigUDE_DHCP is 0 or if ipconfigUSE_DHCP is 1 but DHCP auto configuration failed
+// Define the network addressing.
+// These parameters will be used if either ipconfigUDE_DHCP is 0
+// or if ipconfigUSE_DHCP is 1 but DHCP auto configuration failed.
 static const uint8_t ucIPAddress[4]      = { 192, 168, 100, 65 };
-static const uint8_t ucNetMask[4]        = { 255, 255, 255, 255 };
+static const uint8_t ucNetMask[4]        = { 255, 255, 255, 0 };
 static const uint8_t ucGatewayAddress[4] = { 192, 168, 100, 1 };
 
-// The following is the address of an DNS server
+// The gateway is the host PC used when testing
+static const uint32_t ulHostPcIPAddress = 
+   FreeRTOS_inet_addr_quick(ucGatewayAddress[0],
+                            ucGatewayAddress[1],
+                            ucGatewayAddress[2],
+                            ucGatewayAddress[3]);
+
+// The following is the address of an DNS server.
 static const uint8_t ucDNSServerAddress[4] = { 192, 168, 100, 1 };
 
 // The MAC address array is not declared const as the MAC address will normally
-// be read from an EEPROM and not hard coded (in real deployed applications)
+// be read from an EEPROM and not hard coded (in real deployed applications).
 static uint8_t ucMACAddress[6] = { 0x00, 0x13, 0x3b, 0x00, 0x00, 0x01 };
 
 /////////////////////////////////////////////////////////////
@@ -67,24 +75,35 @@ static void task_led(void *args)
 
 static void test_init(void)
 {
-   int rc1;
-   BaseType_t rc2;
+   BaseType_t rc;
 
-   rc1 = enc28j60_init();
-   if (rc1)
-   {
-      printf("*** init failed, rc1 = %d\n", rc1);
-      fflush(stdout);
-      return;
-   }
+   rc = FreeRTOS_IPInit(ucIPAddress,
+                        ucNetMask,
+                        ucGatewayAddress,
+                        ucDNSServerAddress,
+                        ucMACAddress);
 
-   rc2 = FreeRTOS_IPInit(ucIPAddress,
-                         ucNetMask,
-                         ucGatewayAddress,
-                         ucDNSServerAddress,
-                         ucMACAddress);
+   printf("rc=%ld\n", rc); fflush(stdout);
+}
 
-   printf("rc2=%ld\n", rc2); fflush(stdout);
+/////////////////////////////////////////////////////////////
+
+static void test_send_ping(void)
+{
+   const TickType_t xBlockTime = pdMS_TO_TICKS(2000);
+   uint32_t ulIPAddress;
+   BaseType_t rc;
+
+   // If a ping request is successfully sent then the
+   // sequence number sent in the ping message is returned.
+   //
+   // The TCP/IP stack calls the application defined
+   // vApplicationPingReplyHook() hook function when it
+   // receives a reply to an outgoing ping request.
+
+   rc = FreeRTOS_SendPingRequest(ulHostPcIPAddress, 4, xBlockTime);
+
+   printf("rc=%ld\n", rc); fflush(stdout);
 }
 
 /////////////////////////////////////////////////////////////
@@ -95,11 +114,11 @@ static void test_send_udp(void)
    struct freertos_sockaddr xDestinationAddress;
    int32_t rc;
 
-   xDestinationAddress.sin_addr = FreeRTOS_inet_addr_quick(192, 168, 100, 1);
+   xDestinationAddress.sin_addr = ulHostPcIPAddress;
    xDestinationAddress.sin_port = FreeRTOS_htons(8000);
 
    // create socket
-   xClientSocket = FreeRTOS_socket( FREERTOS_AF_INET, FREERTOS_SOCK_DGRAM, FREERTOS_IPPROTO_UDP );
+   xClientSocket = FreeRTOS_socket(FREERTOS_AF_INET, FREERTOS_SOCK_DGRAM, FREERTOS_IPPROTO_UDP);
    configASSERT( xClientSocket != FREERTOS_INVALID_SOCKET );
 
    // send data on socket
@@ -127,7 +146,8 @@ static void print_test_menu(void)
   printf("--          TEST MENU            --\n");
   printf("-----------------------------------\n");
   printf(" 1. init\n");
-  printf(" 2. send UDP\n");
+  printf(" 2. send PING\n");
+  printf(" 3. send UDP\n");
   printf("\n");
 }
 
@@ -156,6 +176,9 @@ static void task_test(void *args)
             test_init();
             break;
          case 2:
+            test_send_ping();
+            break;
+         case 3:
             test_send_udp();
             break;
          default:
@@ -176,13 +199,13 @@ int main(void)
 
    printf("\nalive_freertosip - started\n");
 
-   xTaskCreate(task_led,  "LED",   50, NULL, configMAX_PRIORITIES-1, NULL);
-   xTaskCreate(task_test, "TEST", 250, NULL, configMAX_PRIORITIES-4, NULL);
+   xTaskCreate(task_led,  "LED",   50, NULL, TASK_LED_PRIO,  NULL);
+   xTaskCreate(task_test, "TEST", 250, NULL, TASK_TEST_PRIO, NULL);
 
    printf("heap-free: %u\n", xPortGetFreeHeapSize());
 
    vTaskStartScheduler();
-   while(1)
+   while (1)
    {
       ;
    }

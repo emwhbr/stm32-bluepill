@@ -1,5 +1,5 @@
-#ifndef __DWT_DELAY_H__
-#define __DWT_DELAY_H__
+#ifndef __SHARED_DWT_DELAY_H__
+#define __SHARED_DWT_DELAY_H__
 
 #include <stdint.h>
 

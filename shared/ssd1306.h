@@ -1,5 +1,5 @@
-#ifndef __SSD1306_H__
-#define __SSD1306_H__
+#ifndef __SHARED_SSD1306_H__
+#define __SHARED_SSD1306_H__
 
 #include <stdint.h>
 

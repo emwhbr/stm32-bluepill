@@ -8,32 +8,36 @@
 #ifndef FREERTOS_IP_CONFIG_H
 #define FREERTOS_IP_CONFIG_H
 
-// EMWHBR: Not used
-#define ipconfigUSE_LINKED_RX_MESSAGES            0
+#include "application_freertos_prio.h"
+
+// EMWHBR: Not used functionality
 #define ipconfigDHCP_SEND_DISCOVER_AFTER_AUTO_IP  0
 #define ipconfigSOCKET_HAS_USER_SEMAPHORE         0
 #define ipconfigSUPPORT_SIGNALS                   0
 
+// EMWHBR: Used functionality
+#define ipconfigUSE_LINKED_RX_MESSAGES            1
+
 /* Prototype for the function used to print out.  In this case it prints to the
 console before the network is connected then a UDP port after the network has
 connected. */
-extern void vLoggingPrintf( const char *pcFormatString, ... );
+extern void vApplicationLoggingPrintf( const char *pcFormatString, ... );
 
 /* Set to 1 to print out debug messages.  If ipconfigHAS_DEBUG_PRINTF is set to
 1 then FreeRTOS_debug_printf should be defined to the function used to print
 out the debugging messages. */
 #define ipconfigHAS_DEBUG_PRINTF	1
 #if( ipconfigHAS_DEBUG_PRINTF == 1 )
-	#define FreeRTOS_debug_printf(X)	vLoggingPrintf X
+	#define FreeRTOS_debug_printf(X)	vApplicationLoggingPrintf X
 #endif
 
 /* Set to 1 to print out non debugging messages, for example the output of the
 FreeRTOS_netstat() command, and ping replies.  If ipconfigHAS_PRINTF is set to 1
 then FreeRTOS_printf should be set to the function used to print out the
 messages. */
-#define ipconfigHAS_PRINTF			0
+#define ipconfigHAS_PRINTF			1
 #if( ipconfigHAS_PRINTF == 1 )
-	#define FreeRTOS_printf(X)			vLoggingPrintf X
+	#define FreeRTOS_printf(X)			vApplicationLoggingPrintf X
 #endif
 
 /* Define the byte order of the target MCU (the MCU FreeRTOS+TCP is executing
@@ -65,7 +69,7 @@ and also DNS may use small timeouts.  If a DNS reply comes in after the DNS
 socket has been destroyed, the result will be stored into the cache.  The next
 call to FreeRTOS_gethostbyname() will return immediately, without even creating
 a socket. */
-#define ipconfigUSE_DNS_CACHE				( 1 )
+#define ipconfigUSE_DNS_CACHE				   ( 1 )
 #define ipconfigDNS_CACHE_NAME_LENGTH		( 16 )
 #define ipconfigDNS_CACHE_ENTRIES			( 4 )
 #define ipconfigDNS_REQUEST_ATTEMPTS		( 2 )
@@ -79,7 +83,7 @@ configMAX_PRIORITIES is a standard FreeRTOS configuration parameter defined in
 FreeRTOSConfig.h, not FreeRTOSIPConfig.h. Consideration needs to be given as to
 the priority assigned to the task executing the IP stack relative to the
 priority assigned to tasks that use the IP stack. */
-#define ipconfigIP_TASK_PRIORITY			( configMAX_PRIORITIES - 3 )
+#define ipconfigIP_TASK_PRIORITY			TASK_IP_RTOS_PRIO
 
 /* The size, in words (not bytes), of the stack allocated to the FreeRTOS+TCP
 task.  This setting is less important when the FreeRTOS Win32 simulator is used
@@ -93,8 +97,8 @@ things such as a DHCP transaction number or initial sequence number.  Random
 number generation is performed via this macro to allow applications to use their
 own random number generation method.  For example, it might be possible to
 generate a random number by sampling noise on an analogue input. */
-extern UBaseType_t uxRand(void);
-#define ipconfigRAND32()	uxRand()
+extern UBaseType_t uxApplicationRand(void);
+#define ipconfigRAND32()	uxApplicationRand()
 
 /* If ipconfigUSE_NETWORK_EVENT_HOOK is set to 1 then FreeRTOS+TCP will call the
 network event hook at the appropriate times.  If ipconfigUSE_NETWORK_EVENT_HOOK
@@ -124,7 +128,7 @@ stack will revert to using the static IP address even when ipconfigUSE_DHCP is
 set to 1 if a valid configuration cannot be obtained from a DHCP server for any
 reason.  The static configuration used is that passed into the stack by the
 FreeRTOS_IPInit() function call. */
-#define ipconfigUSE_DHCP	1
+#define ipconfigUSE_DHCP  1
 
 /* When ipconfigUSE_DHCP is set to 1, DHCP requests will be sent out at
 increasing time intervals until either a reply is received from a DHCP server
@@ -133,7 +137,7 @@ ipconfigMAXIMUM_DISCOVER_TX_PERIOD.  The IP stack will revert to using the
 static IP address passed as a parameter to FreeRTOS_IPInit() if the
 re-transmission time interval reaches ipconfigMAXIMUM_DISCOVER_TX_PERIOD without
 a DHCP reply being received. */
-#define ipconfigMAXIMUM_DISCOVER_TX_PERIOD		( 120000 / portTICK_PERIOD_MS )
+#define ipconfigMAXIMUM_DISCOVER_TX_PERIOD		( 30000 / portTICK_PERIOD_MS )
 
 /* The ARP cache is a table that maps IP addresses to MAC addresses.  The IP
 stack can only send a UDP message to a remove IP address if it knowns the MAC
@@ -174,7 +178,7 @@ not set to 1 then only FreeRTOS_indet_addr_quick() is available. */
 are available to the IP stack.  The total number of network buffers is limited
 to ensure the total amount of RAM that can be consumed by the IP stack is capped
 to a pre-determinable value. */
-#define ipconfigNUM_NETWORK_BUFFER_DESCRIPTORS		4
+#define ipconfigNUM_NETWORK_BUFFER_DESCRIPTORS		10
 
 /* A FreeRTOS queue is used to send events from application tasks to the IP
 stack.  ipconfigEVENT_QUEUE_LENGTH sets the maximum number of events that can
@@ -211,7 +215,7 @@ contain.  For normal Ethernet V2 frames the maximum MTU is 1500.  Setting a
 lower value can save RAM, depending on the buffer management scheme used.  If
 ipconfigCAN_FRAGMENT_OUTGOING_PACKETS is 1 then (ipconfigNETWORK_MTU - 28) must
 be divisible by 8. */
-#define ipconfigNETWORK_MTU   586 // RFC791 specifies 576 B, but DHCP requires 586 B
+#define ipconfigNETWORK_MTU   586 // RFC791 specifies a minimum 576 B, but DHCP requires 586 B
 #define ipconfigTCP_MSS       522
 
 /* Set ipconfigUSE_DNS to 1 to include a basic DNS client/resolver.  DNS is used
@@ -224,7 +228,7 @@ generate replies to incoming ICMP echo (ping) requests. */
 
 /* If ipconfigSUPPORT_OUTGOING_PINGS is set to 1 then the
 FreeRTOS_SendPingRequest() API function is available. */
-#define ipconfigSUPPORT_OUTGOING_PINGS				0
+#define ipconfigSUPPORT_OUTGOING_PINGS				1
 
 /* If ipconfigSUPPORT_SELECT_FUNCTION is set to 1 then the FreeRTOS_select()
 (and associated) API function is available. */

@@ -10,7 +10,8 @@ The layout and build structure was inspired by the contents found at:<br/>
 https://github.com/libopencm3/libopencm3-template.git
 
 ## FreeRTOS
-The use of FreeRTOS in the projects is described [here](FreeRTOS/README.md).
+The use of FreeRTOS in the projects is described [here](FreeRTOS/README.md).<br/>
+The use of FreeRTOS+TCP in the projects is described [here](FreeRTOS-Plus-TCP/README.md).<br/>
 
 ## Dependencies
 All projects have been built and tested with:

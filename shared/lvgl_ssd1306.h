@@ -1,5 +1,5 @@
-#ifndef __LVGL_SSD1306_H__
-#define __LVGL_SSD1306_H__
+#ifndef __SHARED_LVGL_SSD1306_H__
+#define __SHARED_LVGL_SSD1306_H__
 
 #include <stdint.h>
 

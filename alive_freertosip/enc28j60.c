@@ -1,5 +1,3 @@
-#include <stdio.h>
-
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/spi.h>
@@ -11,13 +9,25 @@
 #include <task.h>
 #include <semphr.h>
 
+#include <FreeRTOSIPConfig.h>
+#include <FreeRTOSIPConfigDefaults.h>
+#include <FreeRTOS_IP.h>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wredundant-decls"
+#include <FreeRTOS_IP_Private.h>
+#pragma GCC diagnostic pop
+#include <NetworkBufferManagement.h>
+
 #include "enc28j60.h"
 #include "enc28j60_defs.h"
 #include "dwt_delay.h"
+#if( ipconfigHAS_DEBUG_PRINTF == 1 )
+#include "util.h"
+#endif
 
 //
 // Implementation notes:
-// TBD
+// This driver implements an Ethernet MAC driver for FreeRTOS+TCP.
 //
 // References:
 // [1] ENC28J60 Data sheet, DS39662E
@@ -91,27 +101,29 @@
 // internal driver data (state and synchronization)
 struct enc28j60_dev
 {
+   uint16_t          eth_max_frame_size;
+   uint8_t           phy_link_status;
    uint16_t          current_bank;
    uint16_t          next_packet;
 
+   SemaphoreHandle_t xSpiMtx;
    SemaphoreHandle_t xSpiDmaTxDoneSem;
    SemaphoreHandle_t xSpiDmaRxDoneSem;
 
    SemaphoreHandle_t xTxDoneSem;
+   uint8_t           tx_error;
 
    TaskHandle_t      xINTWorkTask;
-   uint8_t           *rx_packet;
 };
 
 static struct enc28j60_dev *g_dev = NULL;
 
 // helper macros
-#define ENC28J60_ETH_MAX_FRAME_SIZE  1518
-
 #define MSB(value) (((value) & 0xff00) >> 8)
 #define LSB(value)  ((value) & 0x00ff)
 
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define ENC28J60_SPI_LOCK   xSemaphoreTake(g_dev->xSpiMtx, portMAX_DELAY)
+#define ENC28J60_SPI_UNLOCK xSemaphoreGive(g_dev->xSpiMtx)
 
 // internal functions
 static void enc28j60_gpio_init(void);
@@ -119,8 +131,7 @@ static void enc28j60_gpio_init(void);
 static void enc28j60_enable_ext_int(void);
 static void enc28j60_int_work_task(__attribute__((unused))void * pvParameters);
 static void enc28j60_int_rx(void);
-static void enc28j60_hw_rx(uint8_t *buf, size_t len, size_t *actual);
-static void enc28j60_hex_dump(char *desc, void *addr, int len);
+static NetworkBufferDescriptor_t* enc28j60_hw_rx(void);
 
 static void enc28j60_spi_init(void);
 static void enc28j60_spi_dma_tx_init(void);
@@ -205,7 +216,6 @@ void exti15_10_isr(void)
 
 static void enc28j60_int_work_task(__attribute__((unused))void * pvParameters)
 {
-   uint8_t loop;
    uint8_t int_flags;
 
    while (1)
@@ -217,23 +227,19 @@ static void enc28j60_int_work_task(__attribute__((unused))void * pvParameters)
 
       ENC28J60_DBG_HI;
 
-      // TBD
-      // Workaround for mysterious bug when running to fast.
-      // Without this delay things will lock up.
-      // Chip seems to sometimes generate false interrupts at 1000Hz.
-      // Appropriate value seems to be above 500us.
-      dwt_delay(2000);
+      ENC28J60_SPI_LOCK;
 
       // disable INT pin activity
       enc28j60_bfc_eth_register(ENC28J60_EIE, ENC28J60_EIE_INTIE);
 
       do
       {
-         loop = 0;
-
          // get reason for interrupt
          int_flags = enc28j60_read_ctrl_register(ENC28J60_EIR);
-         //printf("IF=0x%x\n", int_flags); fflush(stdout);
+
+#if( ipconfigHAS_DEBUG_PRINTF == 1 )
+         FreeRTOS_debug_printf( ("ENC: int_flags=0x%02x\n", int_flags) );
+#endif
 
          ////////////////////////////////////////
          // check if link status changed
@@ -244,13 +250,14 @@ static void enc28j60_int_work_task(__attribute__((unused))void * pvParameters)
 
             if ( (enc28j60_read_phy_register(ENC28J60_PHSTAT2) & ENC28J60_PHSTAT2_LSTAT) == ENC28J60_PHSTAT2_LSTAT )
             {
-               // link up
-               //printf("UP\n");fflush(stdout);
+               g_dev->phy_link_status = 1; // link up
             }
             else
             {
-               //link down
-               //printf("DOWN\n");fflush(stdout);
+               g_dev->phy_link_status = 0; // link down
+
+               // signal TCP/IP stack that network connection is lost
+               FreeRTOS_NetworkDown();
             }
          }
 
@@ -263,19 +270,17 @@ static void enc28j60_int_work_task(__attribute__((unused))void * pvParameters)
 
             if (int_flags & ENC28J60_EIR_TXERIF)
             {
-               //printf("TXE\n");fflush(stdout);
                // errata workaround, reset transmit logic
                enc28j60_bfc_eth_register(ENC28J60_EIE, ENC28J60_EIE_TXIE | ENC28J60_EIE_TXERIE);
                enc28j60_bfs_eth_register(ENC28J60_ECON1, ENC28J60_ECON1_TXRST);
                enc28j60_bfc_eth_register(ENC28J60_ECON1, ENC28J60_ECON1_TXRST);
                enc28j60_bfc_eth_register(ENC28J60_EIR, ENC28J60_EIR_TXIF | ENC28J60_EIR_TXERIF);
                enc28j60_bfs_eth_register(ENC28J60_EIE, ENC28J60_EIE_TXIE | ENC28J60_EIE_TXERIE);
+            
+               g_dev->tx_error = 1; // signal transmission error
             }
-            else
-            {
-               //printf("TX\n");fflush(stdout);
-               xSemaphoreGive(g_dev->xTxDoneSem);
-            }
+
+            xSemaphoreGive(g_dev->xTxDoneSem);
          }
 
          ////////////////////////////////////////
@@ -284,7 +289,6 @@ static void enc28j60_int_work_task(__attribute__((unused))void * pvParameters)
          if (int_flags & ENC28J60_EIR_RXERIF)
          {
             enc28j60_bfc_eth_register(ENC28J60_EIR, ENC28J60_EIR_RXERIF);
-            //printf("RXE\n");fflush(stdout);
          }
 
          ////////////////////////////////////////
@@ -292,11 +296,13 @@ static void enc28j60_int_work_task(__attribute__((unused))void * pvParameters)
          ////////////////////////////////////////
          enc28j60_int_rx();
 
-      } while (loop) ;
+      } while (0) ;
 
       // re-enable interrupts from chip
       exti_enable_request(ENC28J60_GPIO_PIN_INT_EXTI);
       enc28j60_bfs_eth_register(ENC28J60_EIE, ENC28J60_EIE_INTIE);
+
+      ENC28J60_SPI_UNLOCK;
    }
 }
 
@@ -304,21 +310,81 @@ static void enc28j60_int_work_task(__attribute__((unused))void * pvParameters)
 
 static void enc28j60_int_rx(void)
 {
-   int pkt_cnt = enc28j60_read_ctrl_register(ENC28J60_EPKTCNT);
-   size_t actual = 0;
+   // We assume that (ipconfigUSE_LINKED_RX_MESSAGES == 1).
+   // Passing all the linked packets to the IP RTOS task in one go.
+#if ipconfigUSE_LINKED_RX_MESSAGES != 1
+#error Driver assumes ipconfigUSE_LINKED_RX_MESSAGES = 1
+#endif
 
+   NetworkBufferDescriptor_t *pxFirstNetworkBuffer = NULL;
+   NetworkBufferDescriptor_t *pxLastNetworkBuffer;
+   NetworkBufferDescriptor_t *pxNetworkBuffer;
+
+   const TickType_t xEventWaitTime = pdMS_TO_TICKS(100);
+   IPStackEvent_t xRxEvent = {eNetworkRxEvent, NULL};
+
+   int pkt_cnt = enc28j60_read_ctrl_register(ENC28J60_EPKTCNT);
+
+#if( ipconfigHAS_DEBUG_PRINTF == 1 )
+   FreeRTOS_debug_printf( ("ENC: pkt_cnt=%d\n", pkt_cnt) );
+#endif
+
+   // handle all received packages, read data and create network buffers
    while (pkt_cnt-- > 0)
    {
-      enc28j60_hw_rx(g_dev->rx_packet, ENC28J60_ETH_MAX_FRAME_SIZE, &actual);
-      printf("RX:%u\n", actual); fflush(stdout);
-      enc28j60_hex_dump("RX-data", g_dev->rx_packet, actual);
+      pxNetworkBuffer = enc28j60_hw_rx();
+      if (pxNetworkBuffer != NULL)
+      {
+         if (pxFirstNetworkBuffer == NULL)
+         {
+            pxFirstNetworkBuffer = pxNetworkBuffer;
+         }
+         else
+         {
+            pxLastNetworkBuffer->pxNextBuffer = pxNetworkBuffer;
+         }
+         pxLastNetworkBuffer = pxNetworkBuffer;
+
+#if( ipconfigHAS_DEBUG_PRINTF == 1 )
+         FreeRTOS_debug_printf( ("RX-len:%u\n", pxNetworkBuffer->xDataLength) );
+         util_hex_dump("RX-data",
+                       pxNetworkBuffer->pucEthernetBuffer,
+                       pxNetworkBuffer->xDataLength);
+#endif
+      }
+   }
+
+   // signal TCP/IP stack that we have received packages
+   if (pxFirstNetworkBuffer != NULL)
+   {
+      xRxEvent.pvData = pxFirstNetworkBuffer;
+      if (xSendEventStructToIPTask(&xRxEvent, xEventWaitTime) != pdPASS)
+      {
+#if( ipconfigHAS_DEBUG_PRINTF == 1 )
+         FreeRTOS_debug_printf( ("ENC: failed to send event\n") );
+#endif
+         // event could not be sent to the IP RTOS task,
+         // we must free all allocated buffers
+         pxNetworkBuffer = pxFirstNetworkBuffer;
+         do
+         {
+            pxLastNetworkBuffer = pxNetworkBuffer->pxNextBuffer;
+            vReleaseNetworkBufferAndDescriptor(pxNetworkBuffer);
+            pxNetworkBuffer = pxLastNetworkBuffer;
+         } while (pxNetworkBuffer != NULL) ;
+      }
    }
 }
 
 /////////////////////////////////////////////////////////////
 
-static void enc28j60_hw_rx(uint8_t *buf, size_t len, size_t *actual)
+static NetworkBufferDescriptor_t* enc28j60_hw_rx(void)
 {
+   const TickType_t xDescriptorWaitTime = pdMS_TO_TICKS(100);
+   NetworkBufferDescriptor_t *pxNetworkBuffer = NULL;
+   size_t len = 0;
+   uint16_t rsv = 0;
+
    // read from the start of the received packet
    enc28j60_write_ctrl_register(ENC28J60_ERDPTL, LSB(g_dev->next_packet));
    enc28j60_write_ctrl_register(ENC28J60_ERDPTH, MSB(g_dev->next_packet));
@@ -327,15 +393,37 @@ static void enc28j60_hw_rx(uint8_t *buf, size_t len, size_t *actual)
    enc28j60_read_eth_buffer((uint8_t *)&g_dev->next_packet, sizeof(uint16_t));
 
    // (two bytes) => length of the received frame in bytes
-   enc28j60_read_eth_buffer((uint8_t *)actual, sizeof(uint16_t));
+   enc28j60_read_eth_buffer((uint8_t *)&len, sizeof(uint16_t));
 
    // (two bytes) => receive status vector
-   uint16_t status = 0;
-   enc28j60_read_eth_buffer((uint8_t *)&status, sizeof(uint16_t));
+   enc28j60_read_eth_buffer((uint8_t *)&rsv, sizeof(uint16_t));
 
-   // limit the number of bytes to read form the Ethernet Frame
-   *actual = MIN(*actual, len);
-   enc28j60_read_eth_buffer(buf, *actual);
+   // proceed if received ok, otherwise package is dropped
+   if ( (rsv & ENC28J60_RSV_RECEIVED_OK) && (len <= g_dev->eth_max_frame_size) )
+   {
+      // get a network buffer and associated network buffer descriptor
+      pxNetworkBuffer = pxGetNetworkBufferWithDescriptor(len, xDescriptorWaitTime);
+      if (pxNetworkBuffer != NULL)
+      {
+         // read data from the received Ethernet Frame, otherwise package is dropped
+         enc28j60_read_eth_buffer(pxNetworkBuffer->pucEthernetBuffer, len);
+
+         // set the packet size, in case a larger buffer was returned
+         pxNetworkBuffer->xDataLength = len - ipSIZE_OF_ETH_CRC_BYTES;
+      }
+#if( ipconfigHAS_DEBUG_PRINTF == 1 )
+      else
+      {
+         FreeRTOS_debug_printf( ("ENC: failed to get buffer\n") );
+      }
+#endif
+   }
+#if( ipconfigHAS_DEBUG_PRINTF == 1 )
+   else
+   {
+      FreeRTOS_debug_printf( ("ENC: RX failed, rsv=0x%04x, len=%d\n", rsv, len) );
+   }
+#endif
 
    // update the ERXRDPT pointer according to errata
    if (g_dev->next_packet == ENC28J60_RX_BUFFER_BEGIN)
@@ -351,68 +439,8 @@ static void enc28j60_hw_rx(uint8_t *buf, size_t len, size_t *actual)
 
    // decrement the packet counter
    enc28j60_bfs_eth_register(ENC28J60_ECON2, ENC28J60_ECON2_PKTDEC);
-}
 
-/////////////////////////////////////////////////////////////
-
-static void enc28j60_hex_dump(char *desc, void *addr, int len)
-{
-   int i;
-   unsigned char buff[17];
-   unsigned char *pc = (unsigned char*)addr;
-
-   // output description
-   if (desc != NULL)
-   {
-      printf ("%s:\n", desc);
-      fflush(stdout);
-   }
-
-   // process every byte in the data
-   for (i = 0; i < len; i++)
-   {
-      // multiple of 16 means new line (with line offset).
-
-      if ((i % 16) == 0)
-      {
-         // Just don't print ASCII for the zeroth line
-         if (i != 0)
-         {
-            printf("  %s\n", buff);
-            fflush(stdout);
-         }
-
-         // output the offset.
-         printf("  %04x ", i);
-         fflush(stdout);
-      }
-
-      // now the hex code for the specific character
-      printf(" %02x", pc[i]);
-      fflush(stdout);
-
-      // and store a printable ASCII character for later
-      if ((pc[i] < 0x20) || (pc[i] > 0x7e))
-      {
-         buff[i % 16] = '.';
-      } else {
-         buff[i % 16] = pc[i];
-      }
-
-      buff[(i % 16) + 1] = '\0';
-   }
-
-   // pad out last line if not exactly 16 characters
-   while ((i % 16) != 0)
-   {
-      printf("   ");
-      fflush(stdout);
-      i++;
-   }
-
-   // and print the final ASCII bit.
-   printf("  %s\n", buff);
-   fflush(stdout);
+   return pxNetworkBuffer;
 }
 
 /////////////////////////////////////////////////////////////
@@ -459,7 +487,7 @@ static void enc28j60_spi_init(void)
 
    spi_init_master(
       ENC28J60_SPI,
-      SPI_CR1_BAUDRATE_FPCLK_DIV_2,
+      SPI_CR1_BAUDRATE_FPCLK_DIV_4,
       SPI_CR1_CPOL_CLK_TO_0_WHEN_IDLE,
       SPI_CR1_CPHA_CLK_TRANSITION_1,
       SPI_CR1_DFF_8BIT,
@@ -810,7 +838,9 @@ static void enc28j60_read_eth_buffer(uint8_t *buf, size_t len)
 
 /////////////////////////////////////////////////////////////
 
-int enc28j60_init(void)
+enc_err_t enc28j60_init(const uint8_t mac_addr[ipMAC_ADDRESS_LENGTH_BYTES],
+                        UBaseType_t int_work_task_prio,
+                        uint16_t eth_max_frame_size)
 {
    // initialize hardware
    enc28j60_gpio_init();
@@ -821,14 +851,20 @@ int enc28j60_init(void)
    {
       g_dev = pvPortMalloc(sizeof(struct enc28j60_dev));
    }
+
+   g_dev->eth_max_frame_size = eth_max_frame_size;
+   g_dev->phy_link_status = 0;
    g_dev->current_bank = ENC28J60_BANK0;
    g_dev->next_packet = ENC28J60_RX_BUFFER_BEGIN;
 
+   if (g_dev->xSpiMtx == NULL)
+   {
+      g_dev->xSpiMtx = xSemaphoreCreateMutex();
+   }
    if (g_dev->xSpiDmaTxDoneSem == NULL)
    {
       g_dev->xSpiDmaTxDoneSem = xSemaphoreCreateBinary();
    }
-
    if (g_dev->xSpiDmaRxDoneSem == NULL)
    {
       g_dev->xSpiDmaRxDoneSem = xSemaphoreCreateBinary();
@@ -838,16 +874,12 @@ int enc28j60_init(void)
    {
       g_dev->xTxDoneSem = xSemaphoreCreateBinary();
    }
+   g_dev->tx_error = 0;
 
    if (g_dev->xINTWorkTask == NULL)
    {
       // worker task for external interrupts generated by ENC28J60
-      xTaskCreate(enc28j60_int_work_task, "INTWRK", 250, NULL, configMAX_PRIORITIES-2, &g_dev->xINTWorkTask);
-   }
-
-   if (g_dev->rx_packet == NULL)
-   {
-      g_dev->rx_packet = pvPortMalloc(ENC28J60_ETH_MAX_FRAME_SIZE);
+      xTaskCreate(enc28j60_int_work_task, "ENCINTWRK", 600, NULL, int_work_task_prio, &g_dev->xINTWorkTask);
    }
 
    // system reset according to ref[1] section 11.2
@@ -862,7 +894,27 @@ int enc28j60_init(void)
    dwt_delay(50);
 
    // wait for oscillator startup
-   while ((enc28j60_read_ctrl_register(ENC28J60_ESTAT) & ENC28J60_ESTAT_CLKRDY) != ENC28J60_ESTAT_CLKRDY) ;
+   TickType_t uxOscStartTime = xTaskGetTickCount();
+   uint8_t osc_ready = 0;
+   while ( (xTaskGetTickCount() - uxOscStartTime) < pdMS_TO_TICKS(100) )
+   {
+      if ( (enc28j60_read_ctrl_register(ENC28J60_ESTAT) & ENC28J60_ESTAT_CLKRDY) == ENC28J60_ESTAT_CLKRDY )
+      {
+         osc_ready = 1;
+         break;
+      }
+      vTaskDelay(pdMS_TO_TICKS(10));
+   }
+   if (!osc_ready)
+   {
+#if( ipconfigHAS_DEBUG_PRINTF == 1 )
+      FreeRTOS_debug_printf( ("ENC: osc timeout\n") );
+#endif
+      return ENC_FAIL;
+   }
+
+    // turn off CLKOUT
+   enc28j60_write_ctrl_register(ENC28J60_ECOCON, 0);
 
    // Microchip Organizationally Unique Identifier (OUI).
    // This is a sanity test that SPI works ok and chip responds as expected.
@@ -870,8 +922,10 @@ int enc28j60_init(void)
    uint16_t phid2 = enc28j60_read_phy_register(ENC28J60_PHID2);
    if ( !( (phid1 == 0x0083) && (phid2 == 0x1400) ) )
    {
-      // TBD: how to signal error here?
-      return 1;
+#if( ipconfigHAS_DEBUG_PRINTF == 1 )
+      FreeRTOS_debug_printf( ("ENC: failed to read OUI\n") );
+#endif
+      return ENC_FAIL;
    }
 
    uint8_t revid = enc28j60_read_ctrl_register(ENC28J60_EREVID);
@@ -881,12 +935,12 @@ int enc28j60_init(void)
    }
 
    // set local MAC address
-   enc28j60_write_ctrl_register(ENC28J60_MAADR1, 0x00);
-   enc28j60_write_ctrl_register(ENC28J60_MAADR2, 0x13);
-   enc28j60_write_ctrl_register(ENC28J60_MAADR3, 0x3b);
-   enc28j60_write_ctrl_register(ENC28J60_MAADR4, 0x00);
-   enc28j60_write_ctrl_register(ENC28J60_MAADR5, 0x00);
-   enc28j60_write_ctrl_register(ENC28J60_MAADR6, 0x01);
+   enc28j60_write_ctrl_register(ENC28J60_MAADR1, mac_addr[0]);
+   enc28j60_write_ctrl_register(ENC28J60_MAADR2, mac_addr[1]);
+   enc28j60_write_ctrl_register(ENC28J60_MAADR3, mac_addr[2]);
+   enc28j60_write_ctrl_register(ENC28J60_MAADR4, mac_addr[3]);
+   enc28j60_write_ctrl_register(ENC28J60_MAADR5, mac_addr[4]);
+   enc28j60_write_ctrl_register(ENC28J60_MAADR6, mac_addr[5]);
 
    // define the receive buffer, the transmit buffer is considered to be the rest
    enc28j60_write_ctrl_register(ENC28J60_ERXSTL, LSB(ENC28J60_RX_BUFFER_BEGIN));
@@ -922,8 +976,8 @@ int enc28j60_init(void)
    enc28j60_write_ctrl_register(ENC28J60_MACON4, ENC28J60_MACON4_DEFER);
 
    // maximum frame length that will be permitted to be received or transmitted
-   enc28j60_write_ctrl_register(ENC28J60_MAMXFLL, LSB(ENC28J60_ETH_MAX_FRAME_SIZE));
-   enc28j60_write_ctrl_register(ENC28J60_MAMXFLH, MSB(ENC28J60_ETH_MAX_FRAME_SIZE));
+   enc28j60_write_ctrl_register(ENC28J60_MAMXFLL, LSB(g_dev->eth_max_frame_size));
+   enc28j60_write_ctrl_register(ENC28J60_MAMXFLH, MSB(g_dev->eth_max_frame_size));
 
    // configure Back-to-Back Inter-Packet Gap
    enc28j60_write_ctrl_register(ENC28J60_MABBIPG, 0x12);
@@ -970,19 +1024,49 @@ int enc28j60_init(void)
    // enable external interrupts
    enc28j60_enable_ext_int();
 
-   return 0;
+   return ENC_OK;
 }
 
 /////////////////////////////////////////////////////////////
 
-void enc28j60_test_send_packet(const uint8_t *buf, size_t len)
+int enc28j60_get_phy_link_status(void)
 {
+   if (g_dev == NULL)
+   {
+      return 0;
+   }
+
+   return g_dev->phy_link_status;
+}
+
+/////////////////////////////////////////////////////////////
+
+enc_err_t enc28j60_send_packet(const uint8_t *buf, size_t len)
+{
+   // don't send packets if link down
+   if (!g_dev->phy_link_status)
+   {
+#if( ipconfigHAS_DEBUG_PRINTF == 1 )
+      FreeRTOS_debug_printf( ("ENC: link down\n") );
+#endif
+      return ENC_FAIL;
+   }
+
+   ENC28J60_SPI_LOCK;
+
    // point to the first byte to transmit
    enc28j60_write_ctrl_register(ENC28J60_EWRPTL, LSB(ENC28J60_TX_BUFFER_BEGIN));
    enc28j60_write_ctrl_register(ENC28J60_EWRPTH, MSB(ENC28J60_TX_BUFFER_BEGIN));
 
    // copy data to transmit buffer
    enc28j60_write_eth_buffer(buf, len);
+
+/*
+#if( ipconfigHAS_DEBUG_PRINTF == 1 )
+   FreeRTOS_debug_printf( ("TX-len:%u\n", len) );
+   util_hex_dump("TX-data", (void *)buf, len);
+#endif
+*/
 
    // transmit buffer location
    enc28j60_write_ctrl_register(ENC28J60_ETXSTL, LSB(ENC28J60_TX_BUFFER_BEGIN));
@@ -991,8 +1075,22 @@ void enc28j60_test_send_packet(const uint8_t *buf, size_t len)
    enc28j60_write_ctrl_register(ENC28J60_ETXNDH, MSB(ENC28J60_TX_BUFFER_BEGIN + len));
 
    // start transmission
+   g_dev->tx_error = 0;
    enc28j60_bfs_eth_register(ENC28J60_ECON1, ENC28J60_ECON1_TXRTS);
+
+   ENC28J60_SPI_UNLOCK;
 
    // wait for transmission completed
    xSemaphoreTake(g_dev->xTxDoneSem, portMAX_DELAY);
+
+   // check if transmission failed
+   if (g_dev->tx_error)
+   {
+#if( ipconfigHAS_DEBUG_PRINTF == 1 )
+      FreeRTOS_debug_printf( ("ENC: TX failed\n") );
+#endif
+      return ENC_FAIL;
+   }
+
+   return ENC_OK;
 }
