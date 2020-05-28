@@ -20,6 +20,7 @@ All projects have been built and tested with:
 * GNU Arm Embedded Toolchain, Version 9-2019-q4-major
 * OpenOCD, 0.10.0
 * SEGGER J-Link EDU, V6.55a
+* SEGGER Ozone, V3.10g
 
 ## Build projects
 Setup the environment:
