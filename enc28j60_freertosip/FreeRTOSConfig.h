@@ -54,7 +54,6 @@
 #define configUSE_16_BIT_TICKS          0
 #define configIDLE_SHOULD_YIELD         1
 #define configUSE_MUTEXES               1
-#define configCHECK_FOR_STACK_OVERFLOW  0
 #define configUSE_COUNTING_SEMAPHORES   1
 
 /* Memory definitions */
@@ -100,6 +99,11 @@ NVIC value of 255. */
    configASSERT() uses the same semantics as the standard C assert() macro. */
 extern void vAssertCalled( unsigned long ulLine, const char * const pcFileName );
 //#define configASSERT( x ) if( ( x ) == 0 ) vAssertCalled( __LINE__, __FILE__ )
+
+/* It is a good idea to define configCHECK_FOR_STACK_OVERFLOW while developing.
+See https://www.freertos.org/Stacks-and-stack-overflow-checking.html
+*/
+#define configCHECK_FOR_STACK_OVERFLOW  0
 
 #endif /* FREERTOS_CONFIG_H */
 

@@ -9,6 +9,7 @@
 #define TASK_LED_PRIO          (configMAX_PRIORITIES - 1)
 #define TASK_ENC_INT_WRK_PRIO  (configMAX_PRIORITIES - 2)
 #define TASK_IP_RTOS_PRIO      (configMAX_PRIORITIES - 3)
-#define TASK_TEST_PRIO         (configMAX_PRIORITIES - 4)
+#define TASK_WEB_SERVER_PRIO   (configMAX_PRIORITIES - 4)
+#define TASK_TEST_PRIO         (configMAX_PRIORITIES - 5)
 
 #endif
