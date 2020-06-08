@@ -90,7 +90,6 @@ static void test_init(void)
 static void test_send_ping(void)
 {
    const TickType_t xBlockTime = pdMS_TO_TICKS(2000);
-   uint32_t ulIPAddress;
    BaseType_t rc;
 
    // If a ping request is successfully sent then the

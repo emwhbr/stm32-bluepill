@@ -61,7 +61,7 @@ TGT_CFLAGS += $(ARCH_FLAGS)
 TGT_CFLAGS += -Werror
 TGT_CFLAGS += -fno-common
 TGT_CFLAGS += -ffunction-sections -fdata-sections
-TGT_CFLAGS += -Wextra -Wshadow -Wno-unused-variable -Wimplicit-function-declaration
+TGT_CFLAGS += -Wextra -Wshadow -Wunused-variable -Wimplicit-function-declaration
 TGT_CFLAGS += -Wredundant-decls -Wstrict-prototypes -Wmissing-prototypes
 TGT_CFLAGS += $(LVGL_CFLAGS)
 
@@ -118,7 +118,7 @@ $(BUILD_DIR)/FreeRTOS_ARP.o           : TGT_CFLAGS += -Wno-redundant-decls -Wno-
 $(BUILD_DIR)/FreeRTOS_DHCP.o          : TGT_CFLAGS += -Wno-redundant-decls -Wno-sign-compare
 $(BUILD_DIR)/FreeRTOS_DNS.o           : TGT_CFLAGS += -Wno-redundant-decls -Wno-strict-prototypes -Wno-missing-prototypes
 $(BUILD_DIR)/FreeRTOS_IP.o            : TGT_CFLAGS += -Wno-redundant-decls -Wno-strict-prototypes -Wno-address-of-packed-member
-$(BUILD_DIR)/FreeRTOS_Sockets.o       : TGT_CFLAGS += -Wno-redundant-decls -Wno-sign-compare -Wno-strict-prototypes
+$(BUILD_DIR)/FreeRTOS_Sockets.o       : TGT_CFLAGS += -Wno-redundant-decls -Wno-sign-compare -Wno-strict-prototypes -Wno-unused-variable
 $(BUILD_DIR)/FreeRTOS_Stream_Buffer.o : TGT_CFLAGS += -Wno-redundant-decls
 $(BUILD_DIR)/FreeRTOS_TCP_IP.o        : TGT_CFLAGS += -Wno-redundant-decls -Wno-unused-function
 $(BUILD_DIR)/FreeRTOS_TCP_WIN.o       : TGT_CFLAGS += -Wno-redundant-decls
