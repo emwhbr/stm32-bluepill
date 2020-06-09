@@ -1,5 +1,5 @@
-#ifndef __IR_NEC_H__
-#define __IR_NEC_H__
+#ifndef __SHARED_IR_NEC_H__
+#define __SHARED_IR_NEC_H__
 
 #include <stdint.h>
 
