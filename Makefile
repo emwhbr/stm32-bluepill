@@ -10,6 +10,7 @@ PROJECTS += littlevgl_basic
 PROJECTS += enc28j60_freertosip
 PROJECTS += irdecode_freertos
 PROJECTS += irgui_freertos
+PROJECTS += dcmotor_freertos
 
 .PHONY = libopencm3
 
