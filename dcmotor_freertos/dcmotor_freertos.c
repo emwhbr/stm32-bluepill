@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
+#include <stdbool.h>
 
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
@@ -10,6 +12,7 @@
 #include "application_freertos_prio.h"
 #include "uart.h"
 #include "adc.h"
+#include "motor_ctrl.h"
 
 /////////////////////////////////////////////////////////////
 
@@ -48,6 +51,7 @@ static void task_led(__attribute__((unused))void * pvParameters)
 static void test_init(void)
 {
    adc_init();
+   motor_ctrl_init();
 }
 
 /////////////////////////////////////////////////////////////
@@ -64,6 +68,36 @@ static void test_read_adc(void)
 
 /////////////////////////////////////////////////////////////
 
+static void test_set_pwm_duty(void)
+{
+   char input_buf[16];
+   unsigned duty_value;
+
+   printf("Enter duty value[0-65535]: ");
+   fflush(stdout);
+
+   fgets(input_buf, 16, stdin);
+   sscanf(input_buf, "%u", &duty_value);
+
+   motor_ctrl_pwm_set_duty(duty_value);
+}
+
+/////////////////////////////////////////////////////////////
+
+static void test_set_direction(bool forward)
+{
+   motor_ctrl_pwm_set_direction(forward);
+}
+
+/////////////////////////////////////////////////////////////
+
+static void test_brake(void)
+{
+   motor_ctrl_brake();
+}
+
+/////////////////////////////////////////////////////////////
+
 static void print_test_menu(void)
 {
   printf("\n");
@@ -73,6 +107,10 @@ static void print_test_menu(void)
   printf("-----------------------------------\n");
   printf(" 1. init\n");
   printf(" 2. read adc\n");
+  printf(" 3. set pwm duty\n");
+  printf(" 4. set direction - forward\n");
+  printf(" 5. set direction - reverse\n");
+  printf(" 6. brake\n");
   printf("\n");
 }
 
@@ -100,6 +138,18 @@ static void task_test(__attribute__((unused))void * pvParameters)
             break;
          case 2:
             test_read_adc();
+            break;
+         case 3:
+            test_set_pwm_duty();
+            break;
+         case 4:
+            test_set_direction(true);
+            break;
+         case 5:
+            test_set_direction(false);
+            break;
+         case 6:
+            test_brake();
             break;
          default:
             printf("*** Illegal choice : %s\n", input_buf);
