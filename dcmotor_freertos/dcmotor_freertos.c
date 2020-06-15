@@ -13,6 +13,7 @@
 #include "uart.h"
 #include "adc.h"
 #include "motor_ctrl.h"
+#include "motor_encoder.h"
 
 /////////////////////////////////////////////////////////////
 
@@ -52,6 +53,7 @@ static void test_init(void)
 {
    adc_init();
    motor_ctrl_init();
+   motor_encoder_init();
 }
 
 /////////////////////////////////////////////////////////////
@@ -98,6 +100,24 @@ static void test_brake(void)
 
 /////////////////////////////////////////////////////////////
 
+static void test_zero_encoder(void)
+{
+   motor_encoder_zero_gearbox_shaft_pos();
+}
+
+/////////////////////////////////////////////////////////////
+
+static void test_get_encoder(void)
+{
+   uint32_t pos = motor_encoder_get_gearbox_shaft_pos();
+   uint32_t deg = (pos * 360) / MOTOR_ENCODER_CPR_GEAR_SHAFT;
+
+   printf("POS : %04lu - 0x%03lx - DEG : %03lu\n",
+          pos, pos, deg);
+}
+
+/////////////////////////////////////////////////////////////
+
 static void print_test_menu(void)
 {
   printf("\n");
@@ -111,6 +131,8 @@ static void print_test_menu(void)
   printf(" 4. set direction - forward\n");
   printf(" 5. set direction - reverse\n");
   printf(" 6. brake\n");
+  printf(" 7. zero encoder\n");
+  printf(" 8. get encoder\n");
   printf("\n");
 }
 
@@ -150,6 +172,12 @@ static void task_test(__attribute__((unused))void * pvParameters)
             break;
          case 6:
             test_brake();
+            break;
+         case 7:
+            test_zero_encoder();
+            break;
+         case 8:
+            test_get_encoder();
             break;
          default:
             printf("*** Illegal choice : %s\n", input_buf);
