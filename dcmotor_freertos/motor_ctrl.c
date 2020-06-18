@@ -46,7 +46,7 @@ static void motor_ctrl_pwm_init(void)
    rcc_periph_clock_enable(MOTOR_TIMER_ALT_GPIO_RCC);
 
    gpio_primary_remap(
-      AFIO_MAPR_SWJ_CFG_JTAG_OFF_SW_OFF,
+      AFIO_MAPR_SWJ_CFG_FULL_SWJ_NO_JNTRST, // PB4 (IN1) must be free from NJTRST
       AFIO_MAPR_TIM3_REMAP_PARTIAL_REMAP);
 
    gpio_set_mode(

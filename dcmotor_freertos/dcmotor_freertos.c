@@ -118,7 +118,7 @@ static void test_get_encoder(void)
 
 /////////////////////////////////////////////////////////////
 
-static void test_manual_speed(void)
+static void test_linear_speed(void)
 {
    char key;
    bool forward = true;
@@ -194,7 +194,7 @@ static void print_test_menu(void)
   printf(" 11. brake\n");
   printf(" 20. zero encoder\n");
   printf(" 21. get encoder\n");
-  printf(" 30. manual speed\n");
+  printf(" 30. linear speed\n");
   printf("\n");
 }
 
@@ -236,7 +236,7 @@ static void task_test(__attribute__((unused))void * pvParameters)
             test_get_encoder();
             break;
          case 30:
-            test_manual_speed();
+            test_linear_speed();
             break;
          default:
             printf("*** Illegal choice : %s\n", input_buf);
