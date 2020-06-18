@@ -151,11 +151,25 @@ char uart_getc(void)
 {
    while (1)
    {
-      if (USART_SR(USART1) & USART_SR_RXNE)
+      if ( (USART_SR(USART1) & USART_SR_RXNE) == USART_SR_RXNE )
       {
          break;
       }
    }
 
    return USART_DR(USART1);
+}
+
+/////////////////////////////////////////////////////////////
+
+char uart_poll(void)
+{
+   char ch = 0;
+
+   if ( (USART_SR(USART1) & USART_SR_RXNE) == USART_SR_RXNE )
+   {
+      ch = USART_DR(USART1);
+   }
+
+   return ch;
 }

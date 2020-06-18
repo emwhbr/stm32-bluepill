@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-// quadrature encoder definitions, Pololu-3240
+// quadrature encoder definitions, Pololu#3240
 #define MOTOR_ENCODER_CPR_GEAR_SHAFT  1632 // CPR x GearRatio = 48 * 34.014
 
 void motor_encoder_init(void);

@@ -4,44 +4,34 @@
 
 #include "motor_ctrl.h"
 
+//
+// Implementation notes:
+// This driver controls the brushed DC motor driver DRV8871
+// from Texas Instrumens.
+//
+// References:
+// [1] DRV8871 Datasheet, Document Number: SLVSCY9B
+//     https://www.ti.com
+//
+
 /////////////////////////////////////////////////////////////
-
-// GPIO support
-#define MOTOR_GPIO_RCC      RCC_GPIOB
-#define MOTOR_GPIO_PORT     GPIOB
-#define MOTOR_GPIO_PIN_DIR  GPIO3  // MAX14870 - DIR
-
-#define MOTOR_DIR_HI  gpio_set(MOTOR_GPIO_PORT,   MOTOR_GPIO_PIN_DIR)
-#define MOTOR_DIR_LO  gpio_clear(MOTOR_GPIO_PORT, MOTOR_GPIO_PIN_DIR)
 
 // PWM (timer) support
 #define MOTOR_TIMER_RCC     RCC_TIM3
 #define MOTOR_TIMER_RST     RST_TIM3
 #define MOTOR_TIMER         TIM3
-#define MOTOR_TIMER_PWM_OC  TIM_OC1
+#define MOTOR_TIMER_OC_IN1  TIM_OC1 // DRV8871 - Pin IN1
+#define MOTOR_TIMER_OC_IN2  TIM_OC2 // DRV8871 - Pin IN2
 
 #define MOTOR_TIMER_ALT_GPIO_RCC         RCC_GPIOB
 #define MOTOR_TIMER_ALT_GPIO_PORT        GPIOB
-#define MOTOR_TIMER_ALT_GPIO_PIN_PWM_OC  GPIO4
+#define MOTOR_TIMER_ALT_GPIO_PIN_OC_IN1  GPIO4
+#define MOTOR_TIMER_ALT_GPIO_PIN_OC_IN2  GPIO5
 
-#define MOTOR_PWM_CYCLE_TIME  (1000) // [us]
+#define MOTOR_PWM_CYCLE_TIME  MOTOR_PWM_MAX_DUTY // [ x 0.125us]
 
 // internal functions
-static void motor_ctrl_gpio_init(void);
 static void motor_ctrl_pwm_init(void);
-
-/////////////////////////////////////////////////////////////
-
-static void motor_ctrl_gpio_init(void)
-{
-   rcc_periph_clock_enable(MOTOR_GPIO_RCC);
-
-   gpio_set_mode(
-      MOTOR_GPIO_PORT,
-      GPIO_MODE_OUTPUT_50_MHZ,
-      GPIO_CNF_OUTPUT_PUSHPULL,
-      MOTOR_GPIO_PIN_DIR);
-}
 
 /////////////////////////////////////////////////////////////
 
@@ -51,7 +41,7 @@ static void motor_ctrl_pwm_init(void)
    rcc_periph_reset_pulse(MOTOR_TIMER_RST);
    timer_disable_counter(MOTOR_TIMER);
 
-   // remap PWM output to alternate pin
+   // remap PWM outputs to alternate pins
    rcc_periph_clock_enable(RCC_AFIO);
    rcc_periph_clock_enable(MOTOR_TIMER_ALT_GPIO_RCC);
 
@@ -63,7 +53,7 @@ static void motor_ctrl_pwm_init(void)
       MOTOR_TIMER_ALT_GPIO_PORT,
       GPIO_MODE_OUTPUT_50_MHZ,
       GPIO_CNF_OUTPUT_ALTFN_OPENDRAIN,
-      MOTOR_TIMER_ALT_GPIO_PIN_PWM_OC);
+      MOTOR_TIMER_ALT_GPIO_PIN_OC_IN1 | MOTOR_TIMER_ALT_GPIO_PIN_OC_IN2);
 
    timer_set_mode(MOTOR_TIMER,
                   TIM_CR1_CKD_CK_INT,
@@ -71,14 +61,15 @@ static void motor_ctrl_pwm_init(void)
                   TIM_CR1_DIR_UP);
 
    // we assume SYSCLK = 72MHz
-   // prescaler 72 => F = 72MHz / 72= 1MHz, T = 1us
-   timer_set_prescaler(MOTOR_TIMER, 72);
+   // prescaler 9 => F = 72MHz / 9 = 8MHz, T = 0.125us
+   // timer period = 0 - 65535 => 0 - 8191us
+   timer_set_prescaler(MOTOR_TIMER, 8); // 9 = 8 + 1
 
    // PWM frequency
    timer_enable_preload(MOTOR_TIMER);
-   timer_set_counter(MOTOR_TIMER, 1);
+   timer_set_counter(MOTOR_TIMER, 0);
    timer_continuous_mode(MOTOR_TIMER);
-   timer_set_period(MOTOR_TIMER, MOTOR_PWM_CYCLE_TIME - 1);
+   timer_set_period(MOTOR_TIMER, MOTOR_PWM_CYCLE_TIME);
 
    // generate an update event to cause shadow registers
    // to be preloaded before the timer is started 
@@ -86,55 +77,63 @@ static void motor_ctrl_pwm_init(void)
    timer_clear_flag(MOTOR_TIMER, TIM_SR_UIF);
    timer_update_on_overflow(MOTOR_TIMER);
 
-   // PWM output channel
-   timer_disable_oc_output(MOTOR_TIMER, MOTOR_TIMER_PWM_OC);
-   timer_set_oc_mode(MOTOR_TIMER, MOTOR_TIMER_PWM_OC, TIM_OCM_PWM1);
-   timer_set_oc_value(MOTOR_TIMER, MOTOR_TIMER_PWM_OC, 0);
-   timer_enable_oc_output(MOTOR_TIMER, MOTOR_TIMER_PWM_OC);
+   // PWM output channels
+   timer_disable_oc_output(MOTOR_TIMER, MOTOR_TIMER_OC_IN1);
+   timer_disable_oc_output(MOTOR_TIMER, MOTOR_TIMER_OC_IN2);
 
-   timer_enable_counter(MOTOR_TIMER);
+   // outputs are active low
+   timer_set_oc_polarity_low(MOTOR_TIMER, MOTOR_TIMER_OC_IN1);
+   timer_set_oc_polarity_low(MOTOR_TIMER, MOTOR_TIMER_OC_IN2);
+
+   // make outputs inactive (high)
+   timer_set_oc_mode(MOTOR_TIMER, MOTOR_TIMER_OC_IN1, TIM_OCM_FORCE_LOW);
+   timer_set_oc_mode(MOTOR_TIMER, MOTOR_TIMER_OC_IN2, TIM_OCM_FORCE_LOW);
+
+   timer_enable_oc_output(MOTOR_TIMER, MOTOR_TIMER_OC_IN1);
+   timer_enable_oc_output(MOTOR_TIMER, MOTOR_TIMER_OC_IN2);
 }
 
 /////////////////////////////////////////////////////////////
 
 void motor_ctrl_init(void)
 {
-   motor_ctrl_gpio_init();
    motor_ctrl_pwm_init();
 
-   motor_ctrl_pwm_set_direction(true);
    motor_ctrl_brake();
 }
 
 /////////////////////////////////////////////////////////////
 
-void motor_ctrl_pwm_set_duty(uint16_t duty_ctrl)
+void motor_ctrl_set_speed(bool forward, uint16_t duty_ctrl)
 {
    if (duty_ctrl >= MOTOR_PWM_CYCLE_TIME)
    {
-      duty_ctrl = MOTOR_PWM_CYCLE_TIME - 1;
+      duty_ctrl = MOTOR_PWM_CYCLE_TIME;
    }
 
-   timer_set_oc_value(MOTOR_TIMER, MOTOR_TIMER_PWM_OC, duty_ctrl);
-}
-
-/////////////////////////////////////////////////////////////
-
-void motor_ctrl_pwm_set_direction(bool forward)
-{
    if (forward)
    {
-      MOTOR_DIR_HI;
+      // IN1 = 1 (inactive), IN2 = PWM
+      timer_set_oc_mode(MOTOR_TIMER, MOTOR_TIMER_OC_IN1, TIM_OCM_FORCE_LOW);
+      timer_set_oc_mode(MOTOR_TIMER, MOTOR_TIMER_OC_IN2, TIM_OCM_PWM1);
+      timer_set_oc_value(MOTOR_TIMER, MOTOR_TIMER_OC_IN2, duty_ctrl);
    }
    else
    {
-      MOTOR_DIR_LO;
+      // IN1 = PWM, IN2 = 1 (inactive)
+      timer_set_oc_mode(MOTOR_TIMER, MOTOR_TIMER_OC_IN1, TIM_OCM_PWM1);
+      timer_set_oc_value(MOTOR_TIMER, MOTOR_TIMER_OC_IN1, duty_ctrl);
+      timer_set_oc_mode(MOTOR_TIMER, MOTOR_TIMER_OC_IN2, TIM_OCM_FORCE_LOW);
    }
+
+   timer_enable_counter(MOTOR_TIMER);
 }
 
 /////////////////////////////////////////////////////////////
 
 void motor_ctrl_brake(void)
 {
-   motor_ctrl_pwm_set_duty(0);
+   timer_set_oc_mode(MOTOR_TIMER, MOTOR_TIMER_OC_IN1, TIM_OCM_FORCE_LOW);
+   timer_set_oc_mode(MOTOR_TIMER, MOTOR_TIMER_OC_IN2, TIM_OCM_FORCE_LOW);
+   timer_disable_counter(MOTOR_TIMER);
 }

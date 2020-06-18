@@ -70,25 +70,25 @@ static void test_read_adc(void)
 
 /////////////////////////////////////////////////////////////
 
-static void test_set_pwm_duty(void)
+static void test_set_speed(void)
 {
    char input_buf[16];
    unsigned duty_value;
+   unsigned direction;
 
-   printf("Enter duty value[0-65535]: ");
+   printf("Enter duty [0-%u]: ", MOTOR_PWM_MAX_DUTY);
    fflush(stdout);
 
    fgets(input_buf, 16, stdin);
    sscanf(input_buf, "%u", &duty_value);
 
-   motor_ctrl_pwm_set_duty(duty_value);
-}
+   printf("Enter dir [1=forward, 0=back]: ");
+   fflush(stdout);
 
-/////////////////////////////////////////////////////////////
+   fgets(input_buf, 16, stdin);
+   sscanf(input_buf, "%u", &direction);
 
-static void test_set_direction(bool forward)
-{
-   motor_ctrl_pwm_set_direction(forward);
+   motor_ctrl_set_speed(direction, duty_value);
 }
 
 /////////////////////////////////////////////////////////////
@@ -118,6 +118,69 @@ static void test_get_encoder(void)
 
 /////////////////////////////////////////////////////////////
 
+static void test_manual_speed(void)
+{
+   char key;
+   bool forward = true;
+   uint32_t duty = 0;
+   uint16_t adc_mv = 0;
+   uint32_t pos_deg = 0;
+
+   motor_ctrl_brake();
+
+   // execute until 'q' key is pressed
+   do
+   {
+      key = uart_poll();
+
+      adc_mv = (adc_get_value()  * ADC_REF_VOLTAGE) / ADC_MAX_VALUE;
+      pos_deg = (motor_encoder_get_gearbox_shaft_pos() * 360) / MOTOR_ENCODER_CPR_GEAR_SHAFT;
+
+      if (adc_mv < 500)
+      {
+         // allow change direction
+         if (key == 'f')
+         {
+            forward = true;
+         }
+         else if (key == 'b')
+         {
+            forward = false;
+         }
+
+         duty = 0;
+      }
+      else if ( (adc_mv >= 500) && (adc_mv <= 2900) )
+      {
+         // motor speed linear control
+         duty = ((adc_mv-500) * MOTOR_PWM_MAX_DUTY) / 2400;
+      }
+      else if (adc_mv > 2400)
+      {
+         // motor speed maximum
+         duty = MOTOR_PWM_MAX_DUTY;
+      }
+
+      // apply motor speed control
+      if (duty)
+      {
+         motor_ctrl_set_speed(forward, duty);
+      }
+      else
+      {
+         motor_ctrl_brake();
+      }
+
+      printf("ADC:%04umV, DUT:%04lu, POS:%03lu\n", adc_mv, duty, pos_deg);
+      vTaskDelay(pdMS_TO_TICKS(50));
+
+   } while (key != 'q') ;
+
+   motor_ctrl_brake();
+}
+
+/////////////////////////////////////////////////////////////
+
 static void print_test_menu(void)
 {
   printf("\n");
@@ -125,14 +188,13 @@ static void print_test_menu(void)
   printf("-----------------------------------\n");
   printf("--          TEST MENU            --\n");
   printf("-----------------------------------\n");
-  printf(" 1. init\n");
-  printf(" 2. read adc\n");
-  printf(" 3. set pwm duty\n");
-  printf(" 4. set direction - forward\n");
-  printf(" 5. set direction - reverse\n");
-  printf(" 6. brake\n");
-  printf(" 7. zero encoder\n");
-  printf(" 8. get encoder\n");
+  printf("  1. init\n");
+  printf("  2. read adc\n");
+  printf(" 10. set speed\n");
+  printf(" 11. brake\n");
+  printf(" 20. zero encoder\n");
+  printf(" 21. get encoder\n");
+  printf(" 30. manual speed\n");
   printf("\n");
 }
 
@@ -161,23 +223,20 @@ static void task_test(__attribute__((unused))void * pvParameters)
          case 2:
             test_read_adc();
             break;
-         case 3:
-            test_set_pwm_duty();
+         case 10:
+            test_set_speed();
             break;
-         case 4:
-            test_set_direction(true);
-            break;
-         case 5:
-            test_set_direction(false);
-            break;
-         case 6:
+         case 11:
             test_brake();
             break;
-         case 7:
+         case 20:
             test_zero_encoder();
             break;
-         case 8:
+         case 21:
             test_get_encoder();
+            break;
+         case 30:
+            test_manual_speed();
             break;
          default:
             printf("*** Illegal choice : %s\n", input_buf);

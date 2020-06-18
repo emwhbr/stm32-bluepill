@@ -4,6 +4,16 @@
 
 #include "motor_encoder.h"
 
+//
+// Implementation notes:
+// This driver decodes the signals from the quadrature encoder
+// used by Pololu DC motor product #3240
+//
+// References:
+// [1] Pololu #3240 spec
+//     https://www.pololu.com/product/3240
+//
+
 /////////////////////////////////////////////////////////////
 
 // GPIO support
