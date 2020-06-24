@@ -25,9 +25,9 @@
 #define DBG_POS_TG  gpio_toggle(DBG_GPIO_PORT, DBG_GPIO_PIN_POS)
 
 // PID parameters
-#define P_GAIN  ( 3.662f)
-#define I_GAIN  ( 0.000f)
-#define D_GAIN  (20.142f)
+#define P_GAIN  (  8.40f)
+#define I_GAIN  (  0.05f)
+#define D_GAIN  ( 48.20f)
 
 #define DUTY_MIN  (-1.0f * motor_pwm_max_duty())
 #define DUTY_MAX  (motor_pwm_max_duty())
@@ -362,9 +362,9 @@ static void mpc_core_pid_task(__attribute__((unused))void * pvParameters)
          {
             dbg_pos_error *= -1.0f;
          }
-         if ((int)dbg_pos_error < 16)
+         if ((int)dbg_pos_error < 25)
          {
-            DBG_POS_LO; // within +/- 16 points, +/-1%
+            DBG_POS_LO; // within +/- 25 points, +/-1.5%
          }
          else
          {
