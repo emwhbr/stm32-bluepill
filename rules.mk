@@ -85,6 +85,9 @@ TGT_LDFLAGS += -Wl,--gc-sections
 ifeq ($(V),99)
 TGT_LDFLAGS += -Wl,--print-gc-sections
 endif
+ifeq ($(V),1)
+TGT_LDFLAGS += -Wl,--trace
+endif
 
 # Linker script generator fills this in for us.
 ifeq (,$(DEVICE))

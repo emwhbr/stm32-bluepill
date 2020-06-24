@@ -6,7 +6,8 @@
 /////////////////////////////////////////////////////////////
 
 // Application task priorities
-#define TASK_LED_PRIO                (configMAX_PRIORITIES - 1)
-#define TASK_TEST_PRIO               (configMAX_PRIORITIES - 2)
+#define TASK_PID_PRIO                (configMAX_PRIORITIES - 1)
+#define TASK_LED_PRIO                (configMAX_PRIORITIES - 2)
+#define TASK_TEST_PRIO               (configMAX_PRIORITIES - 3)
 
 #endif

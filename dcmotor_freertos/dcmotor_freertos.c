@@ -12,8 +12,8 @@
 #include "application_freertos_prio.h"
 #include "uart.h"
 #include "adc.h"
-#include "motor_ctrl.h"
-#include "motor_encoder.h"
+#include "motor.h"
+#include "mpc_fsm.h"
 
 /////////////////////////////////////////////////////////////
 
@@ -49,15 +49,6 @@ static void task_led(__attribute__((unused))void * pvParameters)
 
 /////////////////////////////////////////////////////////////
 
-static void test_init(void)
-{
-   adc_init();
-   motor_ctrl_init();
-   motor_encoder_init();
-}
-
-/////////////////////////////////////////////////////////////
-
 static void test_read_adc(void)
 {
    uint16_t adc_val;
@@ -76,7 +67,7 @@ static void test_set_speed(void)
    unsigned duty_value;
    unsigned direction;
 
-   printf("Enter duty [0-%u]: ", MOTOR_PWM_MAX_DUTY);
+   printf("Enter duty [0-%u]: ", motor_pwm_max_duty());
    fflush(stdout);
 
    fgets(input_buf, 16, stdin);
@@ -88,29 +79,29 @@ static void test_set_speed(void)
    fgets(input_buf, 16, stdin);
    sscanf(input_buf, "%u", &direction);
 
-   motor_ctrl_set_speed(direction, duty_value);
+   motor_ctrl(direction, duty_value);
 }
 
 /////////////////////////////////////////////////////////////
 
 static void test_brake(void)
 {
-   motor_ctrl_brake();
+   motor_ctrl(false, 0);
 }
 
 /////////////////////////////////////////////////////////////
 
 static void test_zero_encoder(void)
 {
-   motor_encoder_zero_gearbox_shaft_pos();
+   motor_zero_shaft_position();
 }
 
 /////////////////////////////////////////////////////////////
 
 static void test_get_encoder(void)
 {
-   uint32_t pos = motor_encoder_get_gearbox_shaft_pos();
-   uint32_t deg = (pos * 360) / MOTOR_ENCODER_CPR_GEAR_SHAFT;
+   uint32_t pos = motor_get_shaft_position();
+   uint32_t deg = (pos * 360) / motor_shaft_max_position();
 
    printf("POS : %04lu - 0x%03lx - DEG : %03lu\n",
           pos, pos, deg);
@@ -118,7 +109,7 @@ static void test_get_encoder(void)
 
 /////////////////////////////////////////////////////////////
 
-static void test_linear_speed(void)
+static void test_dynamic_speed(void)
 {
    char key;
    bool forward = true;
@@ -126,15 +117,15 @@ static void test_linear_speed(void)
    uint16_t adc_mv = 0;
    uint32_t pos_deg = 0;
 
-   motor_ctrl_brake();
+   motor_ctrl(false, 0);
 
    // execute until 'q' key is pressed
    do
    {
       key = uart_poll();
 
-      adc_mv = (adc_get_value()  * ADC_REF_VOLTAGE) / ADC_MAX_VALUE;
-      pos_deg = (motor_encoder_get_gearbox_shaft_pos() * 360) / MOTOR_ENCODER_CPR_GEAR_SHAFT;
+      adc_mv = (adc_get_value() * ADC_REF_VOLTAGE) / ADC_MAX_VALUE;
+      pos_deg = (motor_get_shaft_position() * 360) / motor_shaft_max_position();
 
       if (adc_mv < 500)
       {
@@ -153,22 +144,22 @@ static void test_linear_speed(void)
       else if ( (adc_mv >= 500) && (adc_mv <= 2900) )
       {
          // motor speed linear control
-         duty = ((adc_mv-500) * MOTOR_PWM_MAX_DUTY) / 2400;
+         duty = ((adc_mv-500) * motor_pwm_max_duty()) / 2400;
       }
       else if (adc_mv > 2400)
       {
          // motor speed maximum
-         duty = MOTOR_PWM_MAX_DUTY;
+         duty = motor_pwm_max_duty();
       }
 
       // apply motor speed control
       if (duty)
       {
-         motor_ctrl_set_speed(forward, duty);
+         motor_ctrl(forward, duty);
       }
       else
       {
-         motor_ctrl_brake();
+         motor_ctrl(false, 0);
       }
 
       printf("ADC:%04umV, DUT:%04lu, POS:%03lu\n", adc_mv, duty, pos_deg);
@@ -176,7 +167,57 @@ static void test_linear_speed(void)
 
    } while (key != 'q') ;
 
-   motor_ctrl_brake();
+   motor_ctrl(false, 0);
+}
+
+/////////////////////////////////////////////////////////////
+
+static void test_position_control(void)
+{
+   char key;
+   enum mpc_fsm_event event;
+
+   mpc_fsm_init();
+
+   char input_buf[16];
+   printf("(i)nit, (c)alibrate, (z)ero, (p)osition\n");
+   printf("press enter to start...\n");
+   fflush(stdout);
+   fgets(input_buf, 16, stdin);
+
+   // execute until 'q' key is pressed
+   do
+   {
+      key = uart_poll();
+
+      switch (key)
+      {
+      case 'i':
+         // initialize
+         event = MPC_FSM_EVENT_BUT_INIT;
+         break;
+      case 'z':
+         // zero shaft (init or calibration)
+         event = MPC_FSM_EVENT_BUT_ZERO;
+         break;
+      case 'c':
+         // calibration
+         event = MPC_FSM_EVENT_BUT_CALIB;
+         break;
+      case 'p':
+         // start position control
+         event = MPC_FSM_EVENT_BUT_POS;
+         break;
+      default:
+         event = MPC_FSM_EVENT_NONE;
+      }
+
+      mpc_fsm_execute(event);
+      vTaskDelay(pdMS_TO_TICKS(100));
+
+   } while (key != 'q') ;
+
+   mpc_fsm_execute(MPC_FSM_STATE_INIT);
 }
 
 /////////////////////////////////////////////////////////////
@@ -188,13 +229,13 @@ static void print_test_menu(void)
   printf("-----------------------------------\n");
   printf("--          TEST MENU            --\n");
   printf("-----------------------------------\n");
-  printf("  1. init\n");
   printf("  2. read adc\n");
   printf(" 10. set speed\n");
   printf(" 11. brake\n");
   printf(" 20. zero encoder\n");
   printf(" 21. get encoder\n");
-  printf(" 30. linear speed\n");
+  printf(" 30. dynamic speed\n");
+  printf(" 40. position control\n");
   printf("\n");
 }
 
@@ -217,9 +258,6 @@ static void task_test(__attribute__((unused))void * pvParameters)
 
       switch (value)
       {
-         case 1:
-            test_init();
-            break;
          case 2:
             test_read_adc();
             break;
@@ -236,7 +274,10 @@ static void task_test(__attribute__((unused))void * pvParameters)
             test_get_encoder();
             break;
          case 30:
-            test_linear_speed();
+            test_dynamic_speed();
+            break;
+         case 40:
+            test_position_control();
             break;
          default:
             printf("*** Illegal choice : %s\n", input_buf);
@@ -252,6 +293,8 @@ int main(void)
    init_clock();
    init_gpio();
    uart_init();
+   adc_init();
+   motor_init();
 
    printf("\nirdecode_freertos - started\n");
 
