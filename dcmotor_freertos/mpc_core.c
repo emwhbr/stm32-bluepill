@@ -19,10 +19,20 @@
 #define DBG_GPIO_RCC      RCC_GPIOB
 #define DBG_GPIO_PORT     GPIOB
 #define DBG_GPIO_PIN_POS  GPIO7  // Debug signal, actual position within acceptable limits
+#define DBG_GPIO_PIN_PID  GPIO8  // Debug signal, time to execute PID calculations
 
 #define DBG_POS_HI  gpio_set(DBG_GPIO_PORT,   DBG_GPIO_PIN_POS)
 #define DBG_POS_LO  gpio_clear(DBG_GPIO_PORT, DBG_GPIO_PIN_POS)
 #define DBG_POS_TG  gpio_toggle(DBG_GPIO_PORT, DBG_GPIO_PIN_POS)
+
+#define DBG_PID_HI  gpio_set(DBG_GPIO_PORT,   DBG_GPIO_PIN_PID)
+#define DBG_PID_LO  gpio_clear(DBG_GPIO_PORT, DBG_GPIO_PIN_PID)
+#define DBG_PID_TG  gpio_toggle(DBG_GPIO_PORT, DBG_GPIO_PIN_PID)
+
+// Experiments shows that:
+//   - Encoder starts to pulse  6ms after duty change from zero to 50%.
+//   - Encoder starts to pulse 10ms after duty change from zero to 100%.
+//   - Encoder stops to pulse 180ms after duty change from 100% to zero.
 
 // PID parameters
 #define P_GAIN  (  8.40f)
@@ -51,12 +61,6 @@ enum pid_task_cmd
 // Period time of PID task
 #define PID_TASK_PERIOD_TIME_MS  (5) // F = 1000 / Tms = 200Hz
 
-// Experiments shows that motor is completely stopped 180ms after full duty to zero
-#define MOTOR_STOP_TIME_MS  (20) // [ms]
-
-// Forced number of times in stop-state to avoid fast changes of motor direction
-#define MOTOR_STOP_CNT_MAX  (MOTOR_STOP_TIME_MS / PID_TASK_PERIOD_TIME_MS)
-
 // internal driver data (state and synchronization)
 struct motor_ctrl_dev
 {
@@ -65,7 +69,6 @@ struct motor_ctrl_dev
    QueueHandle_t         xPIDCmdQueue;
    TaskHandle_t          xPIDTask;
    enum motor_ctrl_state current_motor_ctrl_state;
-   uint16_t              motor_stop_cnt;
 };
 
 static struct motor_ctrl_dev *g_dev = NULL;
@@ -97,7 +100,6 @@ void mpc_core_initialize(bool zero_shaft)
 
       g_dev->pid_enable = false;
       g_dev->current_motor_ctrl_state = MOTOR_CTRL_STATE_RESET;
-      g_dev->motor_stop_cnt = 0;
    }
 
    // disable PID controller
@@ -105,9 +107,9 @@ void mpc_core_initialize(bool zero_shaft)
    {
       enum pid_task_cmd cmd = PID_TASK_CMD_DISABLE;
       xQueueSend(g_dev->xPIDCmdQueue, (const void *) &cmd, portMAX_DELAY);
+
       g_dev->pid_enable = false;
       g_dev->current_motor_ctrl_state = MOTOR_CTRL_STATE_RESET;
-      g_dev->motor_stop_cnt = 0;
    }
 
    // stop motor
@@ -129,6 +131,7 @@ void mpc_core_initialize(bool zero_shaft)
    pid_ctrl_set_command_position(&g_dev->pid, 0.0);
 
    DBG_POS_HI;
+   DBG_PID_HI;
 }
 
 /////////////////////////////////////////////////////////////
@@ -140,9 +143,9 @@ void mpc_core_calibrate(bool zero_shaft)
    {
       enum pid_task_cmd cmd = PID_TASK_CMD_DISABLE;
       xQueueSend(g_dev->xPIDCmdQueue, (const void *) &cmd, portMAX_DELAY);
+
       g_dev->pid_enable = false;
       g_dev->current_motor_ctrl_state = MOTOR_CTRL_STATE_RESET;
-      g_dev->motor_stop_cnt = 0;
    }
 
    // stop motor
@@ -185,6 +188,7 @@ void mpc_core_calibrate(bool zero_shaft)
    pid_ctrl_set_command_position(&g_dev->pid, command_pos);
 
    DBG_POS_HI;
+   DBG_PID_HI;
 }
 
 /////////////////////////////////////////////////////////////
@@ -197,6 +201,8 @@ void mpc_core_position(void)
       enum pid_task_cmd cmd = PID_TASK_CMD_ENABLE;
       xQueueSend(g_dev->xPIDCmdQueue, (const void *) &cmd, portMAX_DELAY);
       g_dev->pid_enable = true;
+      DBG_POS_HI;
+      DBG_PID_HI;
    }
 
    bool neg = false;
@@ -206,7 +212,7 @@ void mpc_core_position(void)
       neg = true;
       pos_error *= -1.0f;
    }
-   printf("ERR: %c%04u\n", (neg ? '-' : '+'), (uint16_t)pos_error);
+   printf("POS: %c%04u\n", (neg ? '-' : '+'), (uint16_t)pos_error);
 }
 
 /////////////////////////////////////////////////////////////
@@ -219,9 +225,10 @@ static void mpc_core_gpio_init(void)
       DBG_GPIO_PORT,
       GPIO_MODE_OUTPUT_50_MHZ,
       GPIO_CNF_OUTPUT_PUSHPULL,
-      DBG_GPIO_PIN_POS);
+      DBG_GPIO_PIN_POS | DBG_GPIO_PIN_PID);
 
    DBG_POS_HI;
+   DBG_PID_HI;
 }
 
 /////////////////////////////////////////////////////////////
@@ -250,42 +257,31 @@ static void mpc_core_motor_ctrl_state(float pid_output,
       if (*motor_clockwise)
       {
          next_state = MOTOR_CTRL_STATE_CLOCKWISE;
-         printf("CW\n");
       }
       else
       {
          next_state = MOTOR_CTRL_STATE_ANTICLOCKWISE;
-         printf("ACW\n");
       }
       break;
    case MOTOR_CTRL_STATE_CLOCKWISE:
       // changed direction requires stop-state
       if (*motor_clockwise == false)
       {
-         *motor_clockwise = true;
-         *motor_duty = 0; //*motor_duty / 2;
+         *motor_duty = 0;
          next_state = MOTOR_CTRL_STATE_STOP;
-         printf("CW-->STOP\n");
       }
       break;
    case MOTOR_CTRL_STATE_ANTICLOCKWISE:
       // changed direction requires stop-state
       if (*motor_clockwise == true)
       {
-         *motor_clockwise = false;
-         *motor_duty = 0; //*motor_duty / 2;
+         *motor_duty = 0;
          next_state = MOTOR_CTRL_STATE_STOP;
-         printf("ACW-->STOP\n");
       }
       break;
    case MOTOR_CTRL_STATE_STOP:
-      *motor_clockwise = true;
       *motor_duty = 0;
-      if (++g_dev->motor_stop_cnt >= MOTOR_STOP_CNT_MAX)
-      {
-         g_dev->motor_stop_cnt = 0;
-         next_state = MOTOR_CTRL_STATE_RESET;
-      }
+      next_state = MOTOR_CTRL_STATE_RESET;
       break;
    }
 
@@ -311,7 +307,7 @@ static void mpc_core_pid_task(__attribute__((unused))void * pvParameters)
    enum pid_task_cmd cmd = PID_TASK_CMD_DISABLE;
    bool pid_enable = false;
 
-   TickType_t xLastWakeTime = xTaskGetTickCount();
+   TickType_t xLastWakeTime;
 
    // ---------------------------------
    // PID controller loop
@@ -334,6 +330,10 @@ static void mpc_core_pid_task(__attribute__((unused))void * pvParameters)
          // wait for command
          xQueueReceive(g_dev->xPIDCmdQueue, &cmd, portMAX_DELAY);
          pid_enable = (cmd == PID_TASK_CMD_DISABLE ? false : true);
+         if (pid_enable)
+         {
+            xLastWakeTime = xTaskGetTickCount();
+         }
       }
 
       if (!pid_enable)
@@ -345,8 +345,12 @@ static void mpc_core_pid_task(__attribute__((unused))void * pvParameters)
          // get current shaft position
          shaft_pos = motor_get_shaft_position();
 
+         DBG_PID_LO; // start PID calculations
+
          // update PID
          pid_output = pid_ctrl_update(&g_dev->pid, shaft_pos);
+
+         DBG_PID_HI; // stop PID calculations
 
          //calculate new motor output, limited if necessary
          mpc_core_motor_ctrl_state(pid_output,
@@ -362,9 +366,9 @@ static void mpc_core_pid_task(__attribute__((unused))void * pvParameters)
          {
             dbg_pos_error *= -1.0f;
          }
-         if ((int)dbg_pos_error < 25)
+         if ((int)dbg_pos_error < 16)
          {
-            DBG_POS_LO; // within +/- 25 points, +/-1.5%
+            DBG_POS_LO; // within +/- 16 points, +/-1%
          }
          else
          {
