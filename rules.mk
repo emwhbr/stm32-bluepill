@@ -12,6 +12,9 @@ VPATH += $(FREERTOS_PLUS_TCP_DIR)
 SHARED_DIR = ../shared
 VPATH += $(SHARED_DIR)
 
+CMSIS_DIR = ../CMSIS
+CMSIS_DSP_DIR = $(CMSIS_DIR)/DSP
+
 OOCD_INTERFACE = jlink.cfg
 OOCD_TARGET = stm32f1x.cfg
 OOCD_PROC = ../scripts/openocd_proc.cfg
@@ -29,31 +32,39 @@ NULL := 2>/dev/null
 endif
 
 # Tool paths.
-PREFIX	= arm-none-eabi-
-CC	    = $(PREFIX)gcc
-LD	    = $(PREFIX)gcc
-OBJCOPY	= $(PREFIX)objcopy
-OBJDUMP	= $(PREFIX)objdump
-SIZE    = $(PREFIX)size
-OOCD	= openocd
+PREFIX   = arm-none-eabi-
+CC	      = $(PREFIX)gcc
+LD	      = $(PREFIX)gcc
+OBJCOPY  = $(PREFIX)objcopy
+OBJDUMP  = $(PREFIX)objdump
+SIZE     = $(PREFIX)size
+OOCD     = openocd
 
 OPENCM3_INC = $(OPENCM3_DIR)/include
 FREERTOS_INC = $(FREERTOS_DIR)/include
 FREERTOS_PLUS_TCP_INC = $(FREERTOS_PLUS_TCP_DIR)/include
+CMSIS_INC = $(CMSIS_DIR)/Include
+CMSIS_DSP_INC = $(CMSIS_DSP_DIR)/Include
 
 # Inclusion of library header files
-INCLUDES += $(patsubst %,-I%, . $(OPENCM3_INC)  )
-INCLUDES += $(patsubst %,-I%, . $(FREERTOS_INC) )
-INCLUDES += $(patsubst %,-I%, . $(FREERTOS_PLUS_TCP_INC) )
-INCLUDES += $(patsubst %,-I%, . $(SHARED_DIR)   )
-INCLUDES += $(patsubst %,-I%, . $(LVGL_DIR) )
+INCLUDES = -I./
+INCLUDES += $(patsubst %,-I%, $(OPENCM3_INC)  )
+INCLUDES += $(patsubst %,-I%, $(FREERTOS_INC) )
+INCLUDES += $(patsubst %,-I%, $(FREERTOS_PLUS_TCP_INC) )
+INCLUDES += $(patsubst %,-I%, $(CMSIS_INC) )
+INCLUDES += $(patsubst %,-I%, $(CMSIS_DSP_INC) )
+INCLUDES += $(patsubst %,-I%, $(SHARED_DIR)   )
+INCLUDES += $(patsubst %,-I%, $(LVGL_DIR) )
+
+# External libraries
+CMSIS_DSP_LIB = arm_cortexM3l_math
 
 OBJS = $(CFILES:%.c=$(BUILD_DIR)/%.o)
 OBJS += $(AFILES:%.S=$(BUILD_DIR)/%.o)
 GENERATED_BINS = $(PROJECT).elf $(PROJECT).bin $(PROJECT).map $(PROJECT).list $(PROJECT).lss
 
 TGT_CPPFLAGS += -MD
-TGT_CPPFLAGS += -Wall -Wundef $(INCLUDES)
+TGT_CPPFLAGS += -Wall -Wundef
 TGT_CPPFLAGS += $(INCLUDES) $(OPENCM3_DEFS)
 
 TGT_CFLAGS += $(OPT) $(CSTD) -ggdb3
@@ -75,13 +86,13 @@ TGT_CXXFLAGS += $(LVGL_CFLAGS)
 
 TGT_ASFLAGS += $(OPT) $(ARCH_FLAGS) -ggdb3
 
-TGT_LDFLAGS += -T$(LDSCRIPT) -L$(OPENCM3_DIR)/lib -nostartfiles
+TGT_LDFLAGS += -T$(LDSCRIPT) -nostartfiles
+TGT_LDFLAGS += -L$(OPENCM3_DIR)/lib -L$(CMSIS_DSP_DIR)/Lib/GCC
 TGT_LDFLAGS += $(ARCH_FLAGS)
 TGT_LDFLAGS += -specs=nano.specs
 TGT_LDFLAGS	+= -Wl,-Map=$(*).map
 TGT_LDFLAGS += -Wl,--gc-sections
-# OPTIONAL
-#TGT_LDFLAGS += -Wl,-Map=$(PROJECT).map
+
 ifeq ($(V),99)
 TGT_LDFLAGS += -Wl,--print-gc-sections
 endif
@@ -89,10 +100,12 @@ ifeq ($(V),1)
 TGT_LDFLAGS += -Wl,--trace
 endif
 
-# Linker script generator fills this in for us.
-ifeq (,$(DEVICE))
-LDLIBS += -l$(OPENCM3_LIB)
-endif
+# LibOpenCM3 make structure adds its own library:
+# LDLIBS += -l$(OPENCM3_LIB)
+
+# We must supply the external libraries
+LDLIBS += -l$(CMSIS_DSP_LIB)
+
 # nosys is only in newer gcc-arm-embedded...
 #LDLIBS += -specs=nosys.specs
 LDLIBS += -Wl,--start-group -lc -lgcc -lnosys -Wl,--end-group

@@ -6,6 +6,8 @@
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 
+#include <arm_math.h> // CMSIS-DSP
+
 #include <FreeRTOS.h>
 #include <task.h>
 
@@ -222,6 +224,26 @@ static void test_position_control(void)
 
 /////////////////////////////////////////////////////////////
 
+static void test_cmsis_dsp(void)
+{
+   float f1 = 0.25f;
+   float f2 = 0.50f;
+   float f3 = 0.75f;
+   float f4 = 800.0f / 2048;
+
+   static q31_t q1;
+   static q31_t q2;
+   static q31_t q3;
+   static q31_t q4;
+
+   arm_float_to_q31(&f1, &q1, 1);
+   arm_float_to_q31(&f2, &q2, 1);
+   arm_float_to_q31(&f3, &q3, 1);
+   arm_float_to_q31(&f4, &q4, 1);
+}
+
+/////////////////////////////////////////////////////////////
+
 static void print_test_menu(void)
 {
   printf("\n");
@@ -236,6 +258,7 @@ static void print_test_menu(void)
   printf(" 21. get encoder\n");
   printf(" 30. dynamic speed\n");
   printf(" 40. position control\n");
+  printf(" 50. cmsis dsp\n");
   printf("\n");
 }
 
@@ -278,6 +301,9 @@ static void task_test(__attribute__((unused))void * pvParameters)
             break;
          case 40:
             test_position_control();
+            break;
+         case 50:
+            test_cmsis_dsp();
             break;
          default:
             printf("*** Illegal choice : %s\n", input_buf);
