@@ -8,7 +8,7 @@
 #include <queue.h>
 
 #include "mpc_core.h"
-#include "pid_ctrl.h"
+#include "fix_pid_ctrl.h"
 #include "motor.h"
 #include "adc.h"
 #include "application_freertos_prio.h"
@@ -35,11 +35,12 @@
 //   - Encoder stops to pulse 180ms after duty change from 100% to zero.
 
 // PID parameters
-#define P_GAIN  (  8.40f)
-#define I_GAIN  (  0.05f)
-#define D_GAIN  ( 48.20f)
+#define P_GAIN  ( 33.60f)  //  8.40 -> 16.80 ->  33.60
+#define I_GAIN  (  0.20f)  //  0.05 ->  0.10 ->   0.20
+#define D_GAIN  (192.80f)  // 48.20 -> 96.40 -> 192.80
 
-#define DUTY_MIN  (-1.0f * motor_pwm_max_duty())
+#define FIX_PID_SCALE  (1 << 11) // 2y11 = 2048
+
 #define DUTY_MAX  (motor_pwm_max_duty())
 
 // motor control state definitions
@@ -64,7 +65,7 @@ enum pid_task_cmd
 // internal driver data (state and synchronization)
 struct motor_ctrl_dev
 {
-   struct pid_ctrl       pid;
+   struct fix_pid_ctrl   fix_pid;
    bool                  pid_enable;
    QueueHandle_t         xPIDCmdQueue;
    TaskHandle_t          xPIDTask;
@@ -76,7 +77,11 @@ static struct motor_ctrl_dev *g_dev = NULL;
 // internal functions
 static void mpc_core_gpio_init(void);
 
-static void mpc_core_motor_ctrl_state(float pid_output,
+static fix_t mpc_core_float_to_fix(float f);
+
+static float mpc_core_fix_to_float(fix_t q);
+
+static void mpc_core_motor_ctrl_state(fix_t pid_output,
                                       bool *motor_clockwise,
                                       uint16_t *motor_duty);
 
@@ -126,9 +131,12 @@ void mpc_core_initialize(bool zero_shaft)
    printf("INIT: deg : %03lu\n", now_deg);
 
    // intialize PID controller
-   pid_ctrl_initialize(&g_dev->pid, P_GAIN, I_GAIN, D_GAIN);
-   pid_ctrl_set_output_limits(&g_dev->pid, DUTY_MIN, DUTY_MAX);
-   pid_ctrl_set_command_position(&g_dev->pid, 0.0);
+   fix_pid_ctrl_initialize(&g_dev->fix_pid,
+                           mpc_core_float_to_fix(P_GAIN / FIX_PID_SCALE),
+                           mpc_core_float_to_fix(I_GAIN / FIX_PID_SCALE),
+                           mpc_core_float_to_fix(D_GAIN / FIX_PID_SCALE));
+
+   fix_pid_ctrl_set_command_position(&g_dev->fix_pid, 0);
 
    DBG_POS_HI;
    DBG_PID_HI;
@@ -158,8 +166,10 @@ void mpc_core_calibrate(bool zero_shaft)
    }
 
    // re-initialize PID controller
-   pid_ctrl_initialize(&g_dev->pid, P_GAIN, I_GAIN, D_GAIN);
-   pid_ctrl_set_output_limits(&g_dev->pid, DUTY_MIN, DUTY_MAX);
+   fix_pid_ctrl_initialize(&g_dev->fix_pid,
+                           mpc_core_float_to_fix(P_GAIN / FIX_PID_SCALE),
+                           mpc_core_float_to_fix(I_GAIN / FIX_PID_SCALE),
+                           mpc_core_float_to_fix(D_GAIN / FIX_PID_SCALE));
 
    // update PID set-point, based on ADC value
    uint16_t adc_val = adc_get_value();
@@ -185,7 +195,8 @@ void mpc_core_calibrate(bool zero_shaft)
    printf("CALIB: s-pos : %04u / %04u, s-deg : %03lu, deg : %03lu\n",
           command_pos, motor_shaft_max_position(), command_deg, now_deg);
 
-   pid_ctrl_set_command_position(&g_dev->pid, command_pos);
+   fix_pid_ctrl_set_command_position(&g_dev->fix_pid,
+                                     mpc_core_float_to_fix((float)command_pos / FIX_PID_SCALE));
 
    DBG_POS_HI;
    DBG_PID_HI;
@@ -206,13 +217,16 @@ void mpc_core_position(void)
    }
 
    bool neg = false;
-   float pos_error = g_dev->pid.m_pos_error;
-   if (pos_error < 0)
+   fix_t pos_error = g_dev->fix_pid.m_pos_error;
+   if (!FIX_POSITIVE(pos_error))
    {
       neg = true;
-      pos_error *= -1.0f;
+      arm_abs_q31(&pos_error, &pos_error, 1);
    }
-   printf("POS: %c%04u\n", (neg ? '-' : '+'), (uint16_t)pos_error);
+
+   printf("POS: %c%04u\n",
+          (neg ? '-' : '+'),
+          (uint16_t)(mpc_core_fix_to_float(pos_error) * FIX_PID_SCALE));
 }
 
 /////////////////////////////////////////////////////////////
@@ -233,22 +247,40 @@ static void mpc_core_gpio_init(void)
 
 /////////////////////////////////////////////////////////////
 
-static void mpc_core_motor_ctrl_state(float pid_output,
+static fix_t mpc_core_float_to_fix(float f)
+{
+   q31_t q;
+   arm_float_to_q31(&f, &q, 1);
+   return q;
+}
+
+/////////////////////////////////////////////////////////////
+
+static float mpc_core_fix_to_float(fix_t q)
+{
+   float f;
+   arm_q31_to_float(&q, &f, 1);
+   return f;
+}
+
+/////////////////////////////////////////////////////////////
+
+static void mpc_core_motor_ctrl_state(fix_t pid_output,
                                       bool *motor_clockwise,
                                       uint16_t *motor_duty)
 {
    enum motor_ctrl_state next_state = g_dev->current_motor_ctrl_state;
 
    // determine motor duty and direction
-   if (pid_output >= 0.0f)
+   if (FIX_POSITIVE(pid_output))
    {
       *motor_clockwise = true;
-      *motor_duty = pid_output;
    }
    else {
       *motor_clockwise = false;
-      *motor_duty = (-1.0f * pid_output);
+      arm_abs_q31(&pid_output, &pid_output, 1);
    }
+   *motor_duty = mpc_core_fix_to_float(pid_output) * FIX_PID_SCALE * DUTY_MAX;
 
    // determine next state and limit output if necessary
    switch (g_dev->current_motor_ctrl_state)
@@ -297,12 +329,12 @@ static void mpc_core_motor_ctrl_state(float pid_output,
 static void mpc_core_pid_task(__attribute__((unused))void * pvParameters)
 {
    uint16_t shaft_pos;
-   float pid_output;
+   fix_t pid_output;
 
    bool motor_clockwise;
    uint16_t motor_duty;
 
-   float dbg_pos_error;
+   uint16_t dbg_pos_error;
 
    enum pid_task_cmd cmd = PID_TASK_CMD_DISABLE;
    bool pid_enable = false;
@@ -345,10 +377,12 @@ static void mpc_core_pid_task(__attribute__((unused))void * pvParameters)
          // get current shaft position
          shaft_pos = motor_get_shaft_position();
 
+         // update PID
+         fix_t pos = mpc_core_float_to_fix((float)shaft_pos / FIX_PID_SCALE);
+
          DBG_PID_LO; // start PID calculations
 
-         // update PID
-         pid_output = pid_ctrl_update(&g_dev->pid, shaft_pos);
+         pid_output = fix_pid_ctrl_update(&g_dev->fix_pid, pos);
 
          DBG_PID_HI; // stop PID calculations
 
@@ -361,12 +395,8 @@ static void mpc_core_pid_task(__attribute__((unused))void * pvParameters)
          motor_ctrl(motor_clockwise, motor_duty);
 
          // indicate position error with debug pin
-         dbg_pos_error = g_dev->pid.m_pos_error;
-         if (dbg_pos_error < 0.0f)
-         {
-            dbg_pos_error *= -1.0f;
-         }
-         if ((int)dbg_pos_error < 16)
+         dbg_pos_error = mpc_core_fix_to_float(g_dev->fix_pid.m_pos_error) * FIX_PID_SCALE;
+         if (dbg_pos_error < 16)
          {
             DBG_POS_LO; // within +/- 16 points, +/-1%
          }
