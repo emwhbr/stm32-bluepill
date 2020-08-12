@@ -1,16 +1,11 @@
 #ifndef __FIX_PID_CTRL_H__
 #define __FIX_PID_CTRL_H__
 
-#include <arm_math.h> // CMSIS-DSP
+#include "fix.h" // custom - fixed point math (Q31)
 
 /****************************************************************************
  *               Types and definitions
  ****************************************************************************/
-
-/* basic fixed point type */
-typedef q31_t fix_t;
-
-#define FIX_POSITIVE(q)  ( (q & Q31_MIN) == 0 ) /* check if sign bit is set */
 
 /* pid controller "class" */
 struct fix_pid_ctrl

@@ -6,7 +6,7 @@
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 
-#include <arm_math.h> // CMSIS-DSP
+#include <arm_math.h> // CMSIS-DSP - fixed point math (Q31)
 
 #include <FreeRTOS.h>
 #include <task.h>
@@ -16,6 +16,7 @@
 #include "adc.h"
 #include "motor.h"
 #include "mpc_fsm.h"
+#include "fix.h" // custom - fixed point math (Q31)
 
 /////////////////////////////////////////////////////////////
 
@@ -224,22 +225,108 @@ static void test_position_control(void)
 
 /////////////////////////////////////////////////////////////
 
-static void test_cmsis_dsp(void)
+static void test_q31_cmsis_dsp(void)
 {
    float f1 = 0.25f;
-   float f2 = 0.50f;
+   float f2 = -0.50f;
    float f3 = 0.75f;
    float f4 = 800.0f / 2048;
 
-   static q31_t q1;
-   static q31_t q2;
-   static q31_t q3;
-   static q31_t q4;
+   // static to be able to inspect with debugger
+   static q31_t dq1;
+   static q31_t dq2;
+   static q31_t dq3;
+   static q31_t dq4;
+   static q31_t dq;
 
-   arm_float_to_q31(&f1, &q1, 1);
-   arm_float_to_q31(&f2, &q2, 1);
-   arm_float_to_q31(&f3, &q3, 1);
-   arm_float_to_q31(&f4, &q4, 1);
+   dq = dq1 = dq2 = dq3 = dq4 = 0;
+
+   arm_float_to_q31(&f1, &dq1, 1);
+   arm_float_to_q31(&f2, &dq2, 1);
+   arm_float_to_q31(&f3, &dq3, 1);
+   arm_float_to_q31(&f4, &dq4, 1);
+
+   printf("dq1=0x%08lx\n", dq1);
+   printf("dq2=0x%08lx\n", dq2);
+   printf("dq3=0x%08lx\n", dq3);
+   printf("dq4=0x%08lx\n", dq4);
+
+   // addition
+   f1 = 0.50f;
+   f2 = 0.25f;
+   arm_float_to_q31(&f1, &dq1, 1);
+   arm_float_to_q31(&f2, &dq2, 1);
+   arm_add_q31(&dq1, &dq2, &dq, 1);
+   printf("ADD=0x%08lx\n", dq);
+
+   // subtraction
+   f1 = 0.50f;
+   f2 = 1.00f;
+   arm_float_to_q31(&f1, &dq1, 1);
+   arm_float_to_q31(&f2, &dq2, 1);
+   arm_sub_q31(&dq1, &dq2, &dq, 1);
+   printf("SUB=0x%08lx\n", dq);
+
+   // multiplication
+   f1 = -0.50f;
+   f2 = 0.50f;
+   arm_float_to_q31(&f1, &dq1, 1);
+   arm_float_to_q31(&f2, &dq2, 1);
+   arm_mult_q31(&dq1, &dq2, &dq, 1);
+   printf("MUL=0x%08lx\n", dq);
+}
+
+/////////////////////////////////////////////////////////////
+
+static void test_q31_fix(void)
+{
+   float f1 = 0.25f;
+   float f2 = -0.50f;
+   float f3 = 0.75f;
+   float f4 = 800.0f / 2048;
+
+    // static to be able to inspect with debugger
+   static fix_t fq1;
+   static fix_t fq2;
+   static fix_t fq3;
+   static fix_t fq4;
+   static fix_t fq;
+
+   fq = fq1 = fq2 = fq3 = fq4 = 0;
+
+   fq1 = fix_to_fix(f1);
+   fq2 = fix_to_fix(f2);
+   fq3 = fix_to_fix(f3);
+   fq4 = fix_to_fix(f4);
+
+   printf("fq1=0x%08lx\n", fq1);
+   printf("fq2=0x%08lx\n", fq2);
+   printf("fq3=0x%08lx\n", fq3);
+   printf("fq4=0x%08lx\n", fq4);
+
+   // addition
+   f1 = 0.50f;
+   f2 = 0.25f;
+   fq1 = fix_to_fix(f1);
+   fq2 = fix_to_fix(f2);
+   fq = fix_add_sat(fq1, fq2);
+   printf("ADD=0x%08lx\n", fq);
+
+   // subtraction
+   f1 = 0.50f;
+   f2 = 1.00f;
+   fq1 = fix_to_fix(f1);
+   fq2 = fix_to_fix(f2);
+   fq = fix_sub_sat(fq1, fq2);
+   printf("SUB=0x%08lx\n", fq);
+
+   // multiplication
+   f1 = -0.50f;
+   f2 = 0.50f;
+   fq1 = fix_to_fix(f1);
+   fq2 = fix_to_fix(f2);
+   fq = fix_mul_sat(fq1, fq2);
+   printf("MUL=0x%08lx\n", fq);
 }
 
 /////////////////////////////////////////////////////////////
@@ -258,7 +345,8 @@ static void print_test_menu(void)
   printf(" 21. get encoder\n");
   printf(" 30. dynamic speed\n");
   printf(" 40. position control\n");
-  printf(" 50. cmsis dsp\n");
+  printf(" 50. q31 - cmsis dsp\n");
+  printf(" 51. q31 - fix\n");
   printf("\n");
 }
 
@@ -303,7 +391,10 @@ static void task_test(__attribute__((unused))void * pvParameters)
             test_position_control();
             break;
          case 50:
-            test_cmsis_dsp();
+            test_q31_cmsis_dsp();
+            break;
+         case 51:
+            test_q31_fix();
             break;
          default:
             printf("*** Illegal choice : %s\n", input_buf);

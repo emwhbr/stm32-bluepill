@@ -221,7 +221,7 @@ void mpc_core_position(void)
    if (!FIX_POSITIVE(pos_error))
    {
       neg = true;
-      arm_abs_q31(&pos_error, &pos_error, 1);
+      pos_error = fix_abs_sat(pos_error);
    }
 
    printf("POS: %c%04u\n",
@@ -249,18 +249,14 @@ static void mpc_core_gpio_init(void)
 
 static fix_t mpc_core_float_to_fix(float f)
 {
-   q31_t q;
-   arm_float_to_q31(&f, &q, 1);
-   return q;
+   return fix_to_fix(f);
 }
 
 /////////////////////////////////////////////////////////////
 
 static float mpc_core_fix_to_float(fix_t q)
 {
-   float f;
-   arm_q31_to_float(&q, &f, 1);
-   return f;
+   return fix_to_float(q);
 }
 
 /////////////////////////////////////////////////////////////
@@ -278,7 +274,7 @@ static void mpc_core_motor_ctrl_state(fix_t pid_output,
    }
    else {
       *motor_clockwise = false;
-      arm_abs_q31(&pid_output, &pid_output, 1);
+      pid_output = fix_abs_sat(pid_output);
    }
    *motor_duty = mpc_core_fix_to_float(pid_output) * FIX_PID_SCALE * DUTY_MAX;
 

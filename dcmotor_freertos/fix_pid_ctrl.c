@@ -26,7 +26,7 @@ void fix_pid_ctrl_initialize(struct fix_pid_ctrl *pid,
 {
    /* default output range: 0 - 100 */
    fix_pid_ctrl_set_command_position(pid, 0);
-   fix_pid_ctrl_set_output_limits(pid, Q31_MIN, Q31_MAX);
+   fix_pid_ctrl_set_output_limits(pid, FIX_MIN, FIX_MAX);
 
    pid->m_pos_error = 0;
 
@@ -74,52 +74,23 @@ fix_t fix_pid_ctrl_update(struct fix_pid_ctrl *pid,
    fix_t output;
 
    /* calculate error */
-   arm_sub_q31(&pid->m_command_position,
-               &position,
-               &pid->m_pos_error,
-               1);
+   pid->m_pos_error = fix_sub_sat(pid->m_command_position, position);
 
    /* calculate PROPORTIONAL term */
-   arm_mult_q31(&pid->m_p_gain,
-                &pid->m_pos_error,
-                &p_term,
-                1);
+   p_term = fix_mul_sat(pid->m_p_gain, pid->m_pos_error);
 
    /* Calculate INTEGRAL term */
-   arm_add_q31 (&pid->m_pos_error,
-                &pid->m_i_state,
-                &pid->m_i_state,
-                1);
-
-   arm_mult_q31(&pid->m_i_gain,
-                &pid->m_i_state,
-                &i_term,
-                1);
+   pid->m_i_state = fix_add_sat(pid->m_pos_error, pid->m_i_state);
+   i_term = fix_mul_sat(pid->m_i_gain, pid->m_i_state);
 
    /* calculate DERIVATE term */
-   arm_sub_q31(&pid->m_d_state,
-               &position,
-               &d_term,
-               1);
-
-   arm_mult_q31(&pid->m_d_gain,
-                &d_term,
-                &d_term,
-                1);
-
+   d_term = fix_sub_sat(pid->m_d_state, position);
+   d_term = fix_mul_sat(pid->m_d_gain, d_term);
    pid->m_d_state = position;
 
    /* calculate output */
-   arm_add_q31 (&p_term,
-                &i_term,
-                &output,
-                1);
-
-   arm_add_q31 (&output,
-                &d_term,
-                &output,
-                1);
-
+   output = fix_add_sat(p_term, i_term);
+   output = fix_add_sat(output, d_term);
    pid->m_output = output;
 
    return output;
