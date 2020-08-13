@@ -2,9 +2,11 @@
 
 
 ## General
-Exploring the STM32 MCU by using the "Blue Pill" STM32F103C8T6.
+Exploring the STM32 MCU with the "Blue Pill" STM32F103C8T6.
 
-This repository includes different projects based on [LibOpenCM3](https://libopencm3.org/) and [FreeRTOS](https://www.freertos.org/).<br/>
+![The setup](pictures/stm32-development.jpg)
+
+This repository includes different application projects based on [LibOpenCM3](https://libopencm3.org/) and [FreeRTOS](https://www.freertos.org/).<br/>
 
 The layout and build structure was inspired by the contents found at:<br/>
 https://github.com/libopencm3/libopencm3-template.git
