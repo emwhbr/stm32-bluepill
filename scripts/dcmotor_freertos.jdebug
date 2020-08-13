@@ -36,7 +36,7 @@ void OnProjectLoad (void) {
   //
   Edit.Preference (PREF_TIMESTAMP_FORMAT, TIMESTAMP_FORMAT_INST_CNT);
   Project.SetOSPlugin("FreeRTOSPlugin_CM3");
-  File.Open ("/home/hakanb/proj/nol/bluepill/stm32-bluepill/dcmotor_freertos/dcmotor_freertos.elf");
+  File.Open ("/home/hakanb/proj/nol/bluepill/stm32-bluepill/proj/dcmotor_freertos/dcmotor_freertos.elf");
 }
 
 /*********************************************************************

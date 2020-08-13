@@ -69,7 +69,7 @@ int main(void)
    init_gpio();
    uart_init();
 
-   printf("\nuart_freertos - started\n");
+   printf("\nstdio_freertos - started\n");
 
    xTaskCreate(task_led,  "LED",  100, NULL, configMAX_PRIORITIES-1, NULL);
    xTaskCreate(task_uart, "UART", 200, NULL, configMAX_PRIORITIES-2, NULL);

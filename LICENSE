@@ -20,4 +20,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
-This only applies to the project code, libopencm3 itself has it's own license.
+This only applies to the project code, the following units have specific licenses:
+  - libopencm3
+  - CMSIS
+  - FreeRTOS
+  - LittlevGL

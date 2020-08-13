@@ -1,23 +1,26 @@
 DEVICE = stm32f103c8t6
 
-OPENCM3_DIR =../libopencm3
+# As seen from an individual project
+BASE_DIR = ../..
+
+OPENCM3_DIR = $(BASE_DIR)/libopencm3
 include $(OPENCM3_DIR)/mk/genlink-config.mk
 
-FREERTOS_DIR = ../FreeRTOS
+FREERTOS_DIR = $(BASE_DIR)/FreeRTOS
 VPATH += $(FREERTOS_DIR)
 
-FREERTOS_PLUS_TCP_DIR = ../FreeRTOS-Plus-TCP
+FREERTOS_PLUS_TCP_DIR = $(BASE_DIR)/FreeRTOS-Plus-TCP
 VPATH += $(FREERTOS_PLUS_TCP_DIR)
 
-SHARED_DIR = ../shared
+SHARED_DIR = $(BASE_DIR)/shared
 VPATH += $(SHARED_DIR)
 
-CMSIS_DIR = ../CMSIS
+CMSIS_DIR = $(BASE_DIR)/CMSIS
 CMSIS_DSP_DIR = $(CMSIS_DIR)/DSP
 
 OOCD_INTERFACE = jlink.cfg
 OOCD_TARGET = stm32f1x.cfg
-OOCD_PROC = ../scripts/openocd_proc.cfg
+OOCD_PROC = $(BASE_DIR)/scripts/openocd_proc.cfg
 
 BUILD_DIR = bin
 OPT = -Os

@@ -1,4 +1,4 @@
-LVGL_DIR =  ..
+LVGL_DIR =  ../..
 
 # We are using a non-standard place for configuration file lv_conf.h
 LVGL_CFLAGS = -DLV_CONF_INCLUDE_SIMPLE

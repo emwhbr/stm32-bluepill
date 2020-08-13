@@ -5,5 +5,5 @@ CFILES += runtime_stats.c
 CFILES += uart.c
 CFILES += $(CFILES_FREERTOS) $(CFILES_FREERTOS_HEAP_1)
 
-include ../freertos.mk
-include ../rules.mk
+include ../../freertos.mk
+include ../../rules.mk

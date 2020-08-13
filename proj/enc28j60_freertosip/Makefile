@@ -7,6 +7,6 @@ CFILES += uart.c uart_stdio.c dwt_delay.c util.c
 CFILES += $(CFILES_FREERTOS) $(CFILES_FREERTOS_HEAP_4)
 CFILES += $(CFILES_FREERTOS_PLUS_TCP)
 
-include ../freertos.mk
-include ../freertos-plus-tcp.mk
-include ../rules.mk
+include ../../freertos.mk
+include ../../freertos-plus-tcp.mk
+include ../../rules.mk

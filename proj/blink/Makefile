@@ -4,4 +4,4 @@ CFILES = blink.c
 CFILES += uart.c
 CFILES += systick.c
 
-include ../rules.mk
+include ../../rules.mk
