@@ -1,0 +1,48 @@
+OpenOCD, ST-LINK and fake STM32
+--------------------------------
+
+st-info --probe
+Found 1 stlink programmers
+  version:    V2J29S7
+  serial:     421904023212364d434b4e00
+  hla-serial: "\x42\x19\x04\x02\x32\x12\x36\x4d\x43\x4b\x4e\x00"
+  flash:      131072 (pagesize: 1024)
+  sram:       20480
+  chipid:     0x0410
+  descr:      F1xx Medium-density
+
+The reported chipid (0x0410) looks like a genuine STM32 (STM32F103C8T6).
+But the reported flash size (128KB) is bigger than the expected size (64KB).
+And when using STlink GUI, the reported CoreId is 0x2ba01477, but a genuine
+chip shall report a value of 0x1ba01477. We have identified a fake STM32!!!
+
+But all is not lost. We can still use OpenOCD with ST-LINK by using some magic.
+
+stm32f1x-fake.cfg
+
+This file is a copy of openocd/share/openocd/scripts/target/stm32f1x.cfg.
+Replace the following line:
+   set _CPUTAPID 0x1ba01477
+with the one below:
+   set _CPUTAPID 0x2ba01477
+
+Copy this file to OpenOCD installation directory:
+   sudo cp stm32f1x-fake.cfg /opt/openocd/share/openocd/scripts/target/
+
+Now OpenOCD will be happy and can be started with:
+   openocd -f interface/stlink-v2.cfg -f target/stm32f1x-fake.cfg
+
+Connect with GDB:
+   arm-none-eabi-gdb blink.elf
+   target remote localhost:3333
+   mon reset
+   mon halt
+   load
+   continue
+
+Connect with TELNET:
+   telnet localhost 4444
+   reset halt
+   reg
+   resume
+   halt

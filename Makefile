@@ -33,6 +33,22 @@ clean: clean_libopencm3
 		$(MAKE) -C $$d clean ; \
 	done
 
+reset:
+# We use an arbitrary project to reset target
+	$(MAKE) -C $(PROJECT_DIR)/blink reset
+
+stl_reset:
+# We use an arbitrary project to reset target
+	$(MAKE) -C $(PROJECT_DIR)/blink stl_reset
+
+erase:
+# We use an arbitrary project to erase target
+	$(MAKE) -C $(PROJECT_DIR)/blink erase
+
+stl_erase:
+# We use an arbitrary project to erase target
+	$(MAKE) -C $(PROJECT_DIR)/blink stl_erase
+
 libopencm3: libopencm3/lib/libopencm3_stm32f1.a
 
 libopencm3/lib/libopencm3_stm32f1.a:

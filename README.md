@@ -23,6 +23,7 @@ All projects have been built and tested with:
 * OpenOCD, 0.10.0
 * SEGGER J-Link EDU, V6.55a
 * SEGGER Ozone, V3.10g
+* ST-LINK, https://github.com/stlink-org/stlink, commit 4bfaab0ea993fe86da9f2aef612036adcf8ef58d
 
 ## Build projects
 Setup the environment:
@@ -35,12 +36,21 @@ Build all projects, including libopencm3:
 ```
 Build and manage an individual project:
 ```
-> make -C blink_freertos clean
-> make -C blink_freertos all
-> make -C blink_freertos reset
-> make -C blink_freertos flash
+> make -C proj/blink_freertos clean
+> make -C proj/blink_freertos all
+> make -C proj/blink_freertos reset
+> make -C proj/blink_freertos flash
+> make -C proj/blink_freertos erase
+
+> make -C proj/blink_freertos stl_reset
+> make -C proj/blink_freertos stl_flash
+> make -C proj/blink_freertos stl_erase
+
+> make stl_reset
+> make stl_erase
 ```
-The reset and flash options will make use of OpenOCD and J-Link to control the target.
+The reset, flash and erase options will make use of OpenOCD and J-Link to control the target.
+The stl_xxx options are using the alternative ST-LINK/V2 programmer without OpenOCD.
 
 ## Projects
 The project folder (proj) includes applications that make use of various STM32 capabilities.

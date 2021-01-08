@@ -42,6 +42,7 @@ OBJCOPY  = $(PREFIX)objcopy
 OBJDUMP  = $(PREFIX)objdump
 SIZE     = $(PREFIX)size
 OOCD     = openocd
+STFLASH  = st-flash
 
 OPENCM3_INC = $(OPENCM3_DIR)/include
 FREERTOS_INC = $(FREERTOS_DIR)/include
@@ -126,6 +127,7 @@ LDLIBS += -Wl,--start-group -lc -lgcc -lnosys -Wl,--end-group
 
 all: $(PROJECT).elf $(PROJECT).bin $(PROJECT).list $(PROJECT).lss
 flash: $(PROJECT).flash
+stl_flash: $(PROJECT).stl_flash
 
 # We need to disable warnings for some source code in LittleVGL
 $(BUILD_DIR)/lv_hal_disp.o    : TGT_CFLAGS += -Wno-unused-parameter
@@ -182,11 +184,19 @@ $(PROJECT).elf: $(OBJS) $(LIBDEPS)
 	-f target/$(OOCD_TARGET) -f ${OOCD_PROC} \
 	-c "target_program_flash $(realpath $(*).bin)"
 
+%.stl_flash: %.bin
+	@printf "  ST-LINK FLASH TARGET\t$<\n"
+	$(Q)$(STFLASH) --reset write $(realpath $(*).bin) 0x8000000
+
 reset:
 	@printf "  RESET TARGET\n"
 	$(Q)$(OOCD) -f interface/$(OOCD_INTERFACE) -c "transport select swd" \
 	-f target/$(OOCD_TARGET) -f ${OOCD_PROC} \
 	-c "target_reset"
+
+stl_reset:
+	@printf "  ST-LINK RESET TARGET\n"
+	$(Q)$(STFLASH) reset
 
 erase:
 	@printf "  ERASE FLASH TARGET\n"
@@ -194,10 +204,14 @@ erase:
 	-f target/$(OOCD_TARGET) -f ${OOCD_PROC} \
 	-c "target_erase_flash"
 
+stl_erase:
+	@printf "  ST-LINK ERASE FLASH TARGET\n"
+	$(Q)$(STFLASH) erase
+
 clean:
 	@printf "  CLEAN\t$(PROJECT)\n"
 	$(Q)rm -rf $(BUILD_DIR) $(GENERATED_BINS)
 
-.PHONY: all clean flash
+.PHONY: all clean flash stl_flash
 -include $(OBJS:.o=.d)
 
