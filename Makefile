@@ -13,6 +13,7 @@ PROJECTS += $(PROJECT_DIR)/enc28j60_freertosip
 PROJECTS += $(PROJECT_DIR)/irdecode_freertos
 PROJECTS += $(PROJECT_DIR)/irgui_freertos
 PROJECTS += $(PROJECT_DIR)/dcmotor_freertos
+PROJECTS += $(PROJECT_DIR)/usbd_freertos
 
 .PHONY = libopencm3
 
